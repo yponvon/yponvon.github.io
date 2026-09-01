@@ -1,16 +1,53 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>My Portfolio</title>
+    <title>CS180 Portfolio</title>
     <style>
+        html {
+            min-height: 100%;
+            background: url('0/media/web/background.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
+            margin: 40px auto;
+            max-width: 800px;
+            line-height: 1.5;
+            color: #f0f0f5;
+        }
+        .content-box {
+            background: rgba(10, 10, 25, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            padding: 32px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        }
+        h1 {
+            font-size: 1.6em;
+            margin-top: 0;
+        }
+        .project-btn {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 12px 20px;
+            background: #222;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        .project-btn:hover {
+            background: #444;
         }
     </style>
 </head>
 <body>
-    <h1>Welcome to My CS180 Portfolio!</h1>
-    <a href="./1/index.html">Project 1</a>
+    <div class="content-box">
+        <h1>My CS180 Portfolio</h1>
+        <p>Projects for CS180: Intro to Computer Vision and Computational Photography.</p>
+        <a class="project-btn" href="./0/index.html">Project 0: Becoming Friends with Your Camera</a>
+    </div>
 </body>
 </html>
