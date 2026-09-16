@@ -75,40 +75,15 @@
             padding: 1px 5px;
             border-radius: 3px;
         }
-        .carousel {
+        .grid {
             display: flex;
-            align-items: center;
+            flex-wrap: wrap;
             justify-content: center;
-            gap: 6px;
-            margin: 16px 0 4px;
+            gap: 20px;
         }
-        .carousel .car-viewport {
-            flex: 0 1 520px;
-            min-width: 0;
-        }
-        .carousel img {
-            max-height: 60vh;
-            width: auto;
-            margin: 0 auto;
-        }
-        .car-btn {
-            flex: 0 0 auto;
-            background: transparent;
-            border: none;
-            color: #f0f0f5;
-            font-size: 2.2em;
-            line-height: 1;
-            cursor: pointer;
-            padding: 4px 12px;
-        }
-        .car-btn:hover {
-            color: #8ab4f8;
-        }
-        .car-counter {
-            text-align: center;
-            color: #9a9ab0;
-            font-size: 0.85em;
-            margin-top: 2px;
+        .grid > div {
+            flex: 1 1 340px;
+            max-width: 380px;
         }
     </style>
 </head>
@@ -183,18 +158,19 @@
 
     <h2>Part 1: Single-scale alignment</h2>
     <p>Results of the single-scale, exhaustive &plusmn;15 pixel search on the three low-resolution jpgs provided:</p>
-    <div class="carousel" data-items='[
-        {"src":"media/web/cathedral.jpg","alt":"Aligned cathedral","caption":"cathedral: G (2, 5), R (3, 12)"},
-        {"src":"media/web/monastery.jpg","alt":"Aligned monastery","caption":"monastery: G (2, -3), R (2, 3)"},
-        {"src":"media/web/tobolsk.jpg","alt":"Aligned tobolsk","caption":"tobolsk: G (2, 3), R (3, 6)"}
-    ]'>
-        <button class="car-btn car-prev" aria-label="Previous">&#10094;</button>
-        <div class="car-viewport">
-            <img class="car-img" src="" alt="">
-            <p class="caption car-caption"></p>
-            <p class="car-counter"></p>
+    <div class="grid">
+        <div>
+            <img src="media/web/cathedral.jpg" alt="Aligned cathedral">
+            <p class="caption">cathedral: G (2, 5), R (3, 12)</p>
         </div>
-        <button class="car-btn car-next" aria-label="Next">&#10095;</button>
+        <div>
+            <img src="media/web/monastery.jpg" alt="Aligned monastery">
+            <p class="caption">monastery: G (2, -3), R (2, 3)</p>
+        </div>
+        <div>
+            <img src="media/web/tobolsk.jpg" alt="Aligned tobolsk">
+            <p class="caption">tobolsk: G (2, 3), R (3, 6)</p>
+        </div>
     </div>
 
     <h2>Part 2: Pyramid alignment</h2>
@@ -202,25 +178,47 @@
     procedure and parameters on every image, nothing tuned per plate. Each file is roughly 70MB, and every
     alignment below still finishes in a few seconds. One of the 11, <code>emir.tif</code>, comes out visibly
     misaligned under this metric. See the Bells &amp; Whistles section below for why, and for the fix.</p>
-    <div class="carousel" data-items='[
-        {"src":"media/web/church.jpg","alt":"Aligned church","caption":"church: G (4, 25), R (-4, 58)"},
-        {"src":"media/web/harvesters.jpg","alt":"Aligned harvesters","caption":"harvesters: G (16, 59), R (13, 124)"},
-        {"src":"media/web/icon.jpg","alt":"Aligned icon","caption":"icon: G (17, 41), R (23, 90)"},
-        {"src":"media/web/ilemselga.jpg","alt":"Aligned ilemselga","caption":"ilemselga: G (7, 39), R (11, 130)"},
-        {"src":"media/web/melons.jpg","alt":"Aligned melons","caption":"melons: G (11, 82), R (13, 178)"},
-        {"src":"media/web/religious-painting.jpg","alt":"Aligned religious painting","caption":"religious painting: G (3, 28), R (7, 68)"},
-        {"src":"media/web/self-portrait.jpg","alt":"Aligned self portrait","caption":"self portrait: G (29, 79), R (36, 176)"},
-        {"src":"media/web/siren.jpg","alt":"Aligned siren","caption":"siren: G (-6, 49), R (-25, 96)"},
-        {"src":"media/web/three-generations.jpg","alt":"Aligned three generations","caption":"three generations: G (14, 53), R (11, 112)"},
-        {"src":"media/web/wharf.jpg","alt":"Aligned wharf","caption":"wharf: G (-7, 15), R (-16, 83)"}
-    ]'>
-        <button class="car-btn car-prev" aria-label="Previous">&#10094;</button>
-        <div class="car-viewport">
-            <img class="car-img" src="" alt="">
-            <p class="caption car-caption"></p>
-            <p class="car-counter"></p>
+    <div class="grid">
+        <div>
+            <img src="media/web/church.jpg" alt="Aligned church">
+            <p class="caption">church: G (4, 25), R (-4, 58)</p>
         </div>
-        <button class="car-btn car-next" aria-label="Next">&#10095;</button>
+        <div>
+            <img src="media/web/harvesters.jpg" alt="Aligned harvesters">
+            <p class="caption">harvesters: G (16, 59), R (13, 124)</p>
+        </div>
+        <div>
+            <img src="media/web/icon.jpg" alt="Aligned icon">
+            <p class="caption">icon: G (17, 41), R (23, 90)</p>
+        </div>
+        <div>
+            <img src="media/web/ilemselga.jpg" alt="Aligned ilemselga">
+            <p class="caption">ilemselga: G (7, 39), R (11, 130)</p>
+        </div>
+        <div>
+            <img src="media/web/melons.jpg" alt="Aligned melons">
+            <p class="caption">melons: G (11, 82), R (13, 178)</p>
+        </div>
+        <div>
+            <img src="media/web/religious-painting.jpg" alt="Aligned religious painting">
+            <p class="caption">religious painting: G (3, 28), R (7, 68)</p>
+        </div>
+        <div>
+            <img src="media/web/self-portrait.jpg" alt="Aligned self portrait">
+            <p class="caption">self portrait: G (29, 79), R (36, 176)</p>
+        </div>
+        <div>
+            <img src="media/web/siren.jpg" alt="Aligned siren">
+            <p class="caption">siren: G (-6, 49), R (-25, 96)</p>
+        </div>
+        <div>
+            <img src="media/web/three-generations.jpg" alt="Aligned three generations">
+            <p class="caption">three generations: G (14, 53), R (11, 112)</p>
+        </div>
+        <div>
+            <img src="media/web/wharf.jpg" alt="Aligned wharf">
+            <p class="caption">wharf: G (-7, 15), R (-16, 83)</p>
+        </div>
     </div>
 
     <h3>Failure case: emir.tif</h3>
@@ -243,18 +241,19 @@
     <p>The same procedure, pyramid search with raw-pixel SSD, applied to three more plates I picked from the
     Library of Congress's <a href="https://www.loc.gov/collections/prokudin-gorskii/">Prokudin-Gorskii
     collection</a>. All three align correctly with this metric.</p>
-    <div class="carousel" data-items='[
-        {"src":"media/web/ornament.jpg","alt":"Aligned metal ornament","caption":"metal ornament: G (2, 5), R (4, 11)"},
-        {"src":"media/web/specimens.jpg","alt":"Aligned biological specimens","caption":"seed/bean specimens: G (-4, 4), R (-9, 11)"},
-        {"src":"media/web/iconostasis.jpg","alt":"Aligned iconostasis","caption":"iconostasis: G (0, 4), R (0, 11)"}
-    ]'>
-        <button class="car-btn car-prev" aria-label="Previous">&#10094;</button>
-        <div class="car-viewport">
-            <img class="car-img" src="" alt="">
-            <p class="caption car-caption"></p>
-            <p class="car-counter"></p>
+    <div class="grid">
+        <div>
+            <img src="media/web/ornament.jpg" alt="Aligned metal ornament">
+            <p class="caption">metal ornament: G (2, 5), R (4, 11)</p>
         </div>
-        <button class="car-btn car-next" aria-label="Next">&#10095;</button>
+        <div>
+            <img src="media/web/specimens.jpg" alt="Aligned biological specimens">
+            <p class="caption">seed/bean specimens: G (-4, 4), R (-9, 11)</p>
+        </div>
+        <div>
+            <img src="media/web/iconostasis.jpg" alt="Aligned iconostasis">
+            <p class="caption">iconostasis: G (0, 4), R (0, 11)</p>
+        </div>
     </div>
     <p>Across the full set of 17 images (14 provided plus these 3), <code>emir.tif</code> is the only one that
     fails under plain pixel-based alignment.</p>
@@ -333,36 +332,6 @@
     plate that comes out misaligned, for the brightness-mismatch reason covered in Part 2. Once the Part 4 fix is
     applied to every image, that one corrects itself and nothing else moves by more than 2 pixels. So across the
     full set of 17 images, I end up with no failure cases at all.</p>
-
-    <script>
-        function initCarousel(el) {
-            const items = JSON.parse(el.dataset.items);
-            const img = el.querySelector('.car-img');
-            const caption = el.querySelector('.car-caption');
-            const counter = el.querySelector('.car-counter');
-            let index = 0;
-
-            function render() {
-                img.src = items[index].src;
-                img.alt = items[index].alt;
-                caption.textContent = items[index].caption;
-                counter.textContent = (index + 1) + ' / ' + items.length;
-            }
-
-            el.querySelector('.car-prev').addEventListener('click', () => {
-                index = (index - 1 + items.length) % items.length;
-                render();
-            });
-            el.querySelector('.car-next').addEventListener('click', () => {
-                index = (index + 1) % items.length;
-                render();
-            });
-
-            render();
-        }
-
-        document.querySelectorAll('.carousel').forEach(initCarousel);
-    </script>
 
 </body>
 </html>
