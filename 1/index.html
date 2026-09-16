@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Project 1: Images of the Russian Empire</title>
+    <style>
+        html {
+            min-height: 100%;
+            background: url('../0/media/web/background.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px auto;
+            max-width: 800px;
+            line-height: 1.5;
+            color: #f0f0f5;
+        }
+        h1 {
+            font-size: 1.6em;
+        }
+        h2 {
+            margin-top: 2em;
+        }
+        h3 {
+            margin-top: 1.5em;
+            color: #dcdce8;
+        }
+        img {
+            max-width: 100%;
+            display: block;
+            margin: 10px auto;
+            border-radius: 6px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+        }
+        .side-by-side {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .side-by-side > div {
+            flex: 1;
+            min-width: 340px;
+        }
+        .solo {
+            text-align: center;
+            margin: 16px 0;
+        }
+        p.caption {
+            color: #b8b8c8;
+            font-size: 0.9em;
+            margin-top: -4px;
+            text-align: center;
+        }
+        a {
+            color: #8ab4f8;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 6px 10px;
+            text-align: left;
+        }
+        th {
+            background: rgba(255,255,255,0.08);
+        }
+        code {
+            background: rgba(255,255,255,0.1);
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+        .carousel {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin: 16px 0 4px;
+        }
+        .carousel .car-viewport {
+            flex: 0 1 520px;
+            min-width: 0;
+        }
+        .carousel img {
+            max-height: 60vh;
+            width: auto;
+            margin: 0 auto;
+        }
+        .car-btn {
+            flex: 0 0 auto;
+            background: transparent;
+            border: none;
+            color: #f0f0f5;
+            font-size: 2.2em;
+            line-height: 1;
+            cursor: pointer;
+            padding: 4px 12px;
+        }
+        .car-btn:hover {
+            color: #8ab4f8;
+        }
+        .car-counter {
+            text-align: center;
+            color: #9a9ab0;
+            font-size: 0.85em;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+    <p><a href="../index.html">&larr; back home</a></p>
+    <h1>Project 1: Images of the Russian Empire</h1>
+
+    <h2>Introduction</h2>
+    <p>Between 1909 and 1915, Sergei Prokudin-Gorskii photographed Russia by shooting each scene three times, fast,
+    once through a red filter, once green, once blue, all onto a single glass plate. Color film did not exist yet.
+    A projector was supposed to combine the three back into one color image, but that mostly never happened, and
+    the negatives ended up scanned by the Library of Congress decades later, still stacked in their original,
+    unmerged form: blue on top, green in the middle, red on the bottom. The three exposures were never taken at
+    exactly the same instant, so the scene lands in a slightly different spot in each third. No two plates need
+    the same correction, so my code has to find the shift automatically, per image, with no manual tuning.</p>
+    <div class="side-by-side">
+        <div>
+            <img src="media/web/cathedral-raw.jpg" alt="Raw unaligned cathedral scan, three exposures stacked B, G, R">
+            <p class="caption">a raw plate: blue on top, green in the middle, red on the bottom, not yet aligned</p>
+        </div>
+        <div>
+            <img src="media/web/cathedral.jpg" alt="Aligned cathedral, recovered as a color photo">
+            <p class="caption">the same plate after finding the right shift for each channel and stacking them</p>
+        </div>
+    </div>
+
+    <h2>Approach</h2>
+
+    <h3>Scoring each shift</h3>
+    <p>To recover the color photo, I split each plate into thirds and search for the (x, y) shift that brings the
+    green and red thirds into register with the blue one, which I treat as the fixed reference. For a candidate
+    shift, I first crop a border off both crops before comparing them. The scanned plates have dark borders and a
+    frame that has nothing to do with the actual scene, and without trimming them the search aligns those borders
+    instead of the picture.</p>
+    <div class="solo">
+        <img src="media/web/border-crop.jpg" alt="Cathedral blue channel with the scored interior region outlined in red" style="max-width: 450px;">
+        <p class="caption">the red line marks the interior region actually scored. Everything outside it, the
+        black frame, scratches, and handwriting, is ignored.</p>
+    </div>
+    <p>On what's left, I score the shift with sum of squared differences
+    (SSD): the pixelwise difference between the two crops, squared so positive and negative errors don't cancel,
+    then summed. A smaller total means a closer match, and this is equivalent to the L2 norm for picking the best
+    shift. I also implemented normalized cross-correlation (NCC), which instead subtracts each crop's own mean and
+    rescales it to unit length before taking the dot product between them, so a shift scores near 1 when the two
+    crops vary together
+    and near 0 or negative when they don't, but the results below all use SSD. I take whichever candidate shift
+    scores best and keep it.</p>
+
+    <h3>Single-scale search</h3>
+    <p>On the low-resolution jpgs, I test every integer shift from &minus;15 to +15 in both x and y, 961
+    candidates, score each one, and keep the winner.</p>
+
+    <h3>Coarse-to-fine pyramid</h3>
+    <p>The single-scale search takes much longer on the full-resolution scans. The tifs are roughly ten times
+    larger per side than the jpgs, and displacement scales with image size, so an offset that was 5 pixels on the
+    small version becomes 50 on the full-size one, well outside a &plusmn;15 search. Widening the window directly
+    isn't an option either, since the cost of an exhaustive search grows with the square of its radius, and doing
+    that on a multi-megapixel image would take far longer than the under-a-minute budget for this project. So
+    instead I build an image pyramid: downsample both channels by half repeatedly, with anti-aliasing on so the
+    small image still looks like the big one, until the image is only a few hundred pixels across. At that tiny
+    scale, whatever
+    the true offset was has also shrunk by the same factor at each halving, so it's now small enough for the same
+    &plusmn;15 search to find directly. Climbing back up, each time the image doubles in size, I double my current
+    estimate to match, then run a small &plusmn;2 search around it to correct for the rounding that downsampling
+    introduces. The expensive wide search only ever runs once, on the smallest image in the pyramid. Every level
+    above that is a cheap local correction.</p>
+    <div class="solo">
+        <img src="media/web/pyramid-levels.jpg" alt="Church plate blue channel shown at 5 shrinking pyramid levels">
+        <p class="caption">the blue channel of church.tif at each pyramid level: 3202, 1601, 801, 401, then 201
+        pixels tall. The expensive search only runs on the smallest one.</p>
+    </div>
+
+    <h2>Part 1: Single-scale alignment</h2>
+    <p>Results of the single-scale, exhaustive &plusmn;15 pixel search on the three low-resolution jpgs provided:</p>
+    <div class="carousel" data-items='[
+        {"src":"media/web/cathedral.jpg","alt":"Aligned cathedral","caption":"cathedral: G (2, 5), R (3, 12)"},
+        {"src":"media/web/monastery.jpg","alt":"Aligned monastery","caption":"monastery: G (2, -3), R (2, 3)"},
+        {"src":"media/web/tobolsk.jpg","alt":"Aligned tobolsk","caption":"tobolsk: G (2, 3), R (3, 6)"}
+    ]'>
+        <button class="car-btn car-prev" aria-label="Previous">&#10094;</button>
+        <div class="car-viewport">
+            <img class="car-img" src="" alt="">
+            <p class="caption car-caption"></p>
+            <p class="car-counter"></p>
+        </div>
+        <button class="car-btn car-next" aria-label="Next">&#10095;</button>
+    </div>
+
+    <h2>Part 2: Pyramid alignment</h2>
+    <p>Results of the pyramid search on all 11 full-resolution glass plate scans provided, using the exact same
+    procedure and parameters on every image, nothing tuned per plate. Each file is roughly 70MB, and every
+    alignment below still finishes in a few seconds. One of the 11, <code>emir.tif</code>, comes out visibly
+    misaligned under this metric. See the Bells &amp; Whistles section below for why, and for the fix.</p>
+    <div class="carousel" data-items='[
+        {"src":"media/web/church.jpg","alt":"Aligned church","caption":"church: G (4, 25), R (-4, 58)"},
+        {"src":"media/web/harvesters.jpg","alt":"Aligned harvesters","caption":"harvesters: G (16, 59), R (13, 124)"},
+        {"src":"media/web/icon.jpg","alt":"Aligned icon","caption":"icon: G (17, 41), R (23, 90)"},
+        {"src":"media/web/ilemselga.jpg","alt":"Aligned ilemselga","caption":"ilemselga: G (7, 39), R (11, 130)"},
+        {"src":"media/web/melons.jpg","alt":"Aligned melons","caption":"melons: G (11, 82), R (13, 178)"},
+        {"src":"media/web/religious-painting.jpg","alt":"Aligned religious painting","caption":"religious painting: G (3, 28), R (7, 68)"},
+        {"src":"media/web/self-portrait.jpg","alt":"Aligned self portrait","caption":"self portrait: G (29, 79), R (36, 176)"},
+        {"src":"media/web/siren.jpg","alt":"Aligned siren","caption":"siren: G (-6, 49), R (-25, 96)"},
+        {"src":"media/web/three-generations.jpg","alt":"Aligned three generations","caption":"three generations: G (14, 53), R (11, 112)"},
+        {"src":"media/web/wharf.jpg","alt":"Aligned wharf","caption":"wharf: G (-7, 15), R (-16, 83)"}
+    ]'>
+        <button class="car-btn car-prev" aria-label="Previous">&#10094;</button>
+        <div class="car-viewport">
+            <img class="car-img" src="" alt="">
+            <p class="caption car-caption"></p>
+            <p class="car-counter"></p>
+        </div>
+        <button class="car-btn car-next" aria-label="Next">&#10095;</button>
+    </div>
+
+    <h3>Failure case: emir.tif</h3>
+    <div class="solo">
+        <img src="media/web/emir-bad.jpg" alt="Emir misaligned with raw pixel SSD" style="max-width: 450px;">
+        <p class="caption">emir.tif: G (24, 49), R (57, 103)</p>
+    </div>
+    <p>The result shows visible color fringing around the turban and along the cracks in the wall behind him. The
+    cause becomes obvious in the image below: the blue and red exposures of this particular photo differ
+    substantially in brightness in places, with the robe reading bright in blue and noticeably darker in red.
+    Both SSD and NCC compare raw pixel brightness, so they pull the search toward a shift that matches these
+    brightness patterns rather than the true geometric alignment. The fix is in the Bells &amp; Whistles section
+    below.</p>
+    <div class="solo">
+        <img src="media/web/emir-channels.jpg" alt="emir B, G, R channels side by side" style="max-width: 600px;">
+        <p class="caption">emir's B, G, R channels (left to right). The robe reads bright in blue, dark in red.</p>
+    </div>
+
+    <h2>Part 3: Additional images from the collection</h2>
+    <p>The same procedure, pyramid search with raw-pixel SSD, applied to three more plates I picked from the
+    Library of Congress's <a href="https://www.loc.gov/collections/prokudin-gorskii/">Prokudin-Gorskii
+    collection</a>. All three align correctly with this metric.</p>
+    <div class="carousel" data-items='[
+        {"src":"media/web/ornament.jpg","alt":"Aligned metal ornament","caption":"metal ornament: G (2, 5), R (4, 11)"},
+        {"src":"media/web/specimens.jpg","alt":"Aligned biological specimens","caption":"seed/bean specimens: G (-4, 4), R (-9, 11)"},
+        {"src":"media/web/iconostasis.jpg","alt":"Aligned iconostasis","caption":"iconostasis: G (0, 4), R (0, 11)"}
+    ]'>
+        <button class="car-btn car-prev" aria-label="Previous">&#10094;</button>
+        <div class="car-viewport">
+            <img class="car-img" src="" alt="">
+            <p class="caption car-caption"></p>
+            <p class="car-counter"></p>
+        </div>
+        <button class="car-btn car-next" aria-label="Next">&#10095;</button>
+    </div>
+    <p>Across the full set of 17 images (14 provided plus these 3), <code>emir.tif</code> is the only one that
+    fails under plain pixel-based alignment.</p>
+
+    <h2>Summary of all offsets</h2>
+    <p>Every (x, y) shift from the sections above, gathered in one table for easier reference:</p>
+    <table>
+        <tr><th>image</th><th>G (x, y)</th><th>R (x, y)</th></tr>
+        <tr><td>cathedral</td><td>(2, 5)</td><td>(3, 12)</td></tr>
+        <tr><td>monastery</td><td>(2, -3)</td><td>(2, 3)</td></tr>
+        <tr><td>tobolsk</td><td>(2, 3)</td><td>(3, 6)</td></tr>
+        <tr><td>church</td><td>(4, 25)</td><td>(-4, 58)</td></tr>
+        <tr><td>emir</td><td>(24, 49)</td><td>(57, 103)</td></tr>
+        <tr><td>harvesters</td><td>(16, 59)</td><td>(13, 124)</td></tr>
+        <tr><td>icon</td><td>(17, 41)</td><td>(23, 90)</td></tr>
+        <tr><td>ilemselga</td><td>(7, 39)</td><td>(11, 130)</td></tr>
+        <tr><td>melons</td><td>(11, 82)</td><td>(13, 178)</td></tr>
+        <tr><td>religious painting</td><td>(3, 28)</td><td>(7, 68)</td></tr>
+        <tr><td>self portrait</td><td>(29, 79)</td><td>(36, 176)</td></tr>
+        <tr><td>siren</td><td>(-6, 49)</td><td>(-25, 96)</td></tr>
+        <tr><td>three generations</td><td>(14, 53)</td><td>(11, 112)</td></tr>
+        <tr><td>wharf</td><td>(-7, 15)</td><td>(-16, 83)</td></tr>
+        <tr><td>metal ornament</td><td>(2, 5)</td><td>(4, 11)</td></tr>
+        <tr><td>seed/bean specimens</td><td>(-4, 4)</td><td>(-9, 11)</td></tr>
+        <tr><td>iconostasis</td><td>(0, 4)</td><td>(0, 11)</td></tr>
+    </table>
+
+    <h2>Part 4: Bells &amp; Whistles, better features</h2>
+    <p>The required baseline metric, SSD on raw pixel values, is what Sections 2 and 3 use above, and it holds
+    up on 16 of the 17 plates. On <code>emir.tif</code>, though, raw pixel brightness isn't a reliable signal, for
+    the reason shown above. The fix: score each channel's Sobel gradient magnitude instead of its raw pixel
+    values, still with the same metric, on a different feature. I pass each channel through a 3&times;3 Sobel
+    filter, which produces an edge map, then feed that into the exact same coarse-to-fine pyramid search I use
+    everywhere else. Edges are largely invariant to the brightness differences between channels, since
+    the outline of the turban or a crack in the wall sits in the same place regardless of how bright or dark that
+    spot happens to read in a given exposure.</p>
+    <div class="side-by-side">
+        <div>
+            <img src="media/web/emir-bad.jpg" alt="Before: raw pixel alignment">
+            <p class="caption">before (raw pixels): G (24, 49), R (57, 103)</p>
+        </div>
+        <div>
+            <img src="media/web/emir-edges.jpg" alt="After: Sobel edge-based alignment">
+            <p class="caption">after (Sobel edges): G (24, 49), R (40, 107)</p>
+        </div>
+    </div>
+    <p>The red-channel offset moves from (57, 103) &rarr; (40, 107), the corrected alignment, and the fringing
+    around the turban and wall is gone. I implemented the Sobel kernels, the pyramid, and the search procedure all
+    from scratch, consistent with the rest of the project. The only library call involved is a general-purpose
+    convolution function, and I use it purely as the underlying 3&times;3 convolution primitive, not for any
+    alignment-specific logic.</p>
+    <p>To confirm this doesn't regress anything that was already working, I ran the same edge-based search on all
+    11 provided <code>.tif</code> files. The table below shows the red-channel offset under both metrics, and the
+    largest per-axis difference between them:</p>
+    <table>
+        <tr><th>image</th><th>R, raw pixels</th><th>R, Sobel edges</th><th>max difference</th></tr>
+        <tr><td>church</td><td>(-4, 58)</td><td>(-4, 58)</td><td>0 px</td></tr>
+        <tr><td>emir</td><td>(57, 103)</td><td>(40, 107)</td><td>17 px (fixed)</td></tr>
+        <tr><td>harvesters</td><td>(13, 124)</td><td>(14, 124)</td><td>1 px</td></tr>
+        <tr><td>icon</td><td>(23, 90)</td><td>(23, 90)</td><td>0 px</td></tr>
+        <tr><td>ilemselga</td><td>(11, 130)</td><td>(11, 131)</td><td>1 px</td></tr>
+        <tr><td>melons</td><td>(13, 178)</td><td>(13, 177)</td><td>1 px</td></tr>
+        <tr><td>religious painting</td><td>(7, 68)</td><td>(6, 70)</td><td>2 px</td></tr>
+        <tr><td>self portrait</td><td>(36, 176)</td><td>(37, 176)</td><td>1 px</td></tr>
+        <tr><td>siren</td><td>(-25, 96)</td><td>(-24, 96)</td><td>1 px</td></tr>
+        <tr><td>three generations</td><td>(11, 112)</td><td>(9, 111)</td><td>2 px</td></tr>
+        <tr><td>wharf</td><td>(-16, 83)</td><td>(-16, 82)</td><td>1 px</td></tr>
+    </table>
+    <p>Aside from <code>emir.tif</code>, every offset shifts by at most 2 pixels, well within the two metrics
+    simply agreeing on the same correct alignment. The edge-based metric fixes the one plate that was failing
+    without disturbing the 13 that already worked. With the baseline metric, 1 of 17 images fails. With gradient
+    features, 0 of 17 do.</p>
+
+    <h2>Part 5: Failure cases</h2>
+    <p>With the required baseline, pyramid search with SSD on raw pixel values, <code>emir.tif</code> is the one
+    plate that comes out misaligned, for the brightness-mismatch reason covered in Part 2. Once the Part 4 fix is
+    applied to every image, that one corrects itself and nothing else moves by more than 2 pixels. So across the
+    full set of 17 images, I end up with no failure cases at all.</p>
+
+    <script>
+        function initCarousel(el) {
+            const items = JSON.parse(el.dataset.items);
+            const img = el.querySelector('.car-img');
+            const caption = el.querySelector('.car-caption');
+            const counter = el.querySelector('.car-counter');
+            let index = 0;
+
+            function render() {
+                img.src = items[index].src;
+                img.alt = items[index].alt;
+                caption.textContent = items[index].caption;
+                counter.textContent = (index + 1) + ' / ' + items.length;
+            }
+
+            el.querySelector('.car-prev').addEventListener('click', () => {
+                index = (index - 1 + items.length) % items.length;
+                render();
+            });
+            el.querySelector('.car-next').addEventListener('click', () => {
+                index = (index + 1) % items.length;
+                render();
+            });
+
+            render();
+        }
+
+        document.querySelectorAll('.carousel').forEach(initCarousel);
+    </script>
+
+</body>
+</html>

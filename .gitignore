@@ -1,0 +1,5 @@
+venv/
+__pycache__/
+1/CS180_fa2026_proj1_data/
+1/out_path/
+.DS_Store
