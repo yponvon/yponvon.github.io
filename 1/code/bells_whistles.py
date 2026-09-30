@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import skimage.io as skio
 from skimage import img_as_float
@@ -97,4 +98,6 @@ def colorize_edges(path, out_path=None):
 
 
 if __name__ == "__main__":
-    colorize_edges("CS180_fa2026_proj1_data/emir.tif", "out_path/out_emir_edges.jpg")
+    here = os.path.dirname(os.path.abspath(__file__))
+    colorize_edges(os.path.join(here, "..", "images", "course", "emir.tif"),
+                   os.path.join(here, "..", "images", "output", "out_emir_edges.jpg"))

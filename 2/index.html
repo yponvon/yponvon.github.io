@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fun with Filters and Frequencies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/blog.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters: [{left: '\\[', right: '\\]', display: true}]})"></script>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <div class="label">Contents</div>
+  <a href="#part1">Part 1 · Filters</a>
+  <a class="sub" href="#p11">1.1 Convolution</a>
+  <a class="sub" href="#p12">1.2 Finite differences</a>
+  <a class="sub" href="#p13">1.3 Derivative of Gaussian</a>
+  <a class="sub" href="#p1bw">Bells &amp; Whistles: orientation</a>
+  <a href="#part2">Part 2 · Frequencies</a>
+  <a class="sub" href="#p21">2.1 Sharpening</a>
+  <a class="sub" href="#p22">2.2 Hybrid images</a>
+  <a class="sub" href="#p23">2.3 Stacks</a>
+  <a class="sub" href="#p24">2.4 Blending</a>
+  <a href="#learned">What I learned</a>
+</nav>
+
+<main>
+<a class="back" href="../index.html">&larr; all projects</a>
+
+<header class="hero">
+  <div class="kicker">CS180 · Project 2</div>
+  <h1>Fun with Filters and Frequencies</h1>
+</header>
+
+<!-- ============================================================ -->
+<h2 id="part1"><span class="num">Part 1</span>Fun with Filters</h2>
+
+<section class="block">
+<h3 id="p11"><span class="num">1.1</span>Convolution from scratch</h3>
+<p>For the first part, I implemented convolution from scratch using only NumPy. Convolution works by sliding a small
+kernel across the image and multiplying the kernel values with the pixels underneath it, then adding them
+together.</p>
+<p>I implemented it in two ways. The first version uses four loops, going through every output pixel and every value
+in the kernel. The second version uses only two loops and lets NumPy handle the multiplication and summation for
+each window.</p>
+<p>Both versions use zero padding around the image. I also flipped the kernel before applying it, since this is what
+makes it convolution instead of correlation.</p>
+
+<details open>
+<summary>Code: padding, output window, and both convolutions</summary>
+<pre><code>def pad_zeros(image, ph, pw):
+    padded = np.zeros((image.shape[0] + 2 * ph, image.shape[1] + 2 * pw))
+    padded[ph:ph + image.shape[0], pw:pw + image.shape[1]] = image
+    return padded
+
+def output_window(shape, kshape, mode):
+    # which part of the full output to keep
+    h, w = shape
+    kh, kw = kshape
+    if mode == "full":  return 0, 0, h + kh - 1, w + kw - 1
+    if mode == "same":  return (kh - 1) // 2, (kw - 1) // 2, h, w
+    if mode == "valid": return kh - 1, kw - 1, h - kh + 1, w - kw + 1
+
+def conv2d_4loops(image, kernel, mode="same"):
+    kh, kw = kernel.shape
+    flipped = kernel[::-1, ::-1]
+    padded = pad_zeros(image, kh - 1, kw - 1)
+    r0, c0, out_h, out_w = output_window(image.shape, kernel.shape, mode)
+    out = np.zeros((out_h, out_w))
+    for i in range(out_h):
+        for j in range(out_w):
+            total = 0.0
+            for u in range(kh):
+                for v in range(kw):
+                    total += padded[r0 + i + u, c0 + j + v] * flipped[u, v]
+            out[i, j] = total
+    return out
+
+def conv2d_2loops(image, kernel, mode="same"):
+    kh, kw = kernel.shape
+    flipped = kernel[::-1, ::-1]
+    padded = pad_zeros(image, kh - 1, kw - 1)
+    r0, c0, out_h, out_w = output_window(image.shape, kernel.shape, mode)
+    out = np.zeros((out_h, out_w))
+    for i in range(out_h):
+        for j in range(out_w):
+            window = padded[r0 + i:r0 + i + kh, c0 + j:c0 + j + kw]
+            out[i, j] = np.sum(window * flipped)
+    return out</code></pre>
+</details>
+
+<p>I compared my implementations with <code>scipy.signal.convolve2d</code>. The results were almost exactly the same,
+with only tiny floating-point differences (around 2e-15). The two-loop version was also much faster than the
+four-loop version because NumPy handles the inner calculations in C:</p>
+<table>
+  <tr><th>implementation</th><th>128×128 crop, 9×9 box</th><th>my 290×206 portrait</th></tr>
+  <tr><td>four loops</td><td>0.23 s</td><td>0.95 s</td></tr>
+  <tr><td>two loops</td><td>0.036 s</td><td>0.16 s</td></tr>
+  <tr><td><code>scipy.signal.convolve2d</code></td><td>0.0017 s</td><td>0.007 s</td></tr>
+</table>
+<p>One thing I noticed was that zero padding can cause problems near the edges of an image. For a blur, the border
+becomes slightly darker because the filter averages in the zeros. For edge detection, the jump from the image to
+zero creates strong fake edges around the border. Because of this, I used symmetric padding
+(<code>boundary="symm"</code>) for the later parts.</p>
+<p>For the derivative filters, I used:</p>
+<ul>
+  <li><code>Dx = [1, -1]</code> to detect vertical edges</li>
+  <li><code>Dy = [1, -1]ᵀ</code> to detect horizontal edges</li>
+</ul>
+<div class="grid c4">
+  <div><img src="images/results/p11_gray.jpg" alt="Grayscale portrait"><div class="cap">me, in grayscale</div></div>
+  <div><img src="images/results/p11_box.jpg" alt="Portrait after 9x9 box filter"><div class="cap">9×9 box filter</div></div>
+  <div><img src="images/results/p11_dx.jpg" alt="Portrait convolved with Dx"><div class="cap">D<sub>x</sub></div></div>
+  <div><img src="images/results/p11_dy.jpg" alt="Portrait convolved with Dy"><div class="cap">D<sub>y</sub></div></div>
+</div>
+<p>The box filter made the portrait much softer because it averages the surrounding pixels. The derivative filters
+instead highlighted the edges of the face, hair, clothes, and other features.</p>
+
+<!-- ============================================================ -->
+</section>
+
+<section class="block">
+<h3 id="p12"><span class="num">1.2</span>Finite difference operator</h3>
+<p>Next, I used the finite difference operators on the cameraman image.</p>
+<p>Applying <code>Dx</code> and <code>Dy</code> gives the change in brightness in the x and y directions. I combined
+them to get the gradient magnitude, which tells me how strong the change in brightness is at each pixel.</p>
+<p class="math">\[\lvert \nabla I \rvert = \sqrt{\left(\frac{\partial I}{\partial x}\right)^2 + \left(\frac{\partial I}{\partial y}\right)^2}\]</p>
+<div class="grid c4">
+  <div><img src="images/results/cameraman.jpg" alt="Cameraman"><div class="cap">original</div></div>
+  <div><img src="images/results/p12_dx.jpg" alt="Partial derivative in x"><div class="cap">∂I/∂x</div></div>
+  <div><img src="images/results/p12_dy.jpg" alt="Partial derivative in y"><div class="cap">∂I/∂y</div></div>
+  <div><img src="images/results/p12_mag.jpg" alt="Gradient magnitude"><div class="cap">gradient magnitude</div></div>
+</div>
+<p>I then converted this into an edge map by keeping only pixels above a certain threshold.</p>
+<div class="grid c3">
+  <div><img src="images/results/p12_thresh_10.jpg" alt="Threshold 0.10"><div class="cap">0.10</div></div>
+  <div><img src="images/results/p12_thresh_20.jpg" alt="Threshold 0.20"><div class="cap"><b>0.20 (my choice)</b></div></div>
+  <div><img src="images/results/p12_thresh_30.jpg" alt="Threshold 0.30"><div class="cap">0.30</div></div>
+</div>
+<p>I tried thresholds of 0.10, 0.20 and 0.30. At 0.10, there was too much noise from the grass. At 0.30, the image
+was cleaner, but some actual edges such as parts of the coat and tripod disappeared.</p>
+<p>I ended up choosing <b>0.20</b> because it kept the main edges while removing most of the noise.</p>
+
+<!-- ============================================================ -->
+</section>
+
+<section class="block">
+<h3 id="p13"><span class="num">1.3</span>Derivative of Gaussian</h3>
+<p>The problem with the finite difference method is that it also picks up small details and noise as edges. The
+grass in the image is a good example of this.</p>
+<p>To fix this, I blurred the image with a Gaussian first and then applied the derivative filters. I built the Gaussian (σ = 2, 13×13) from <code>cv2.getGaussianKernel</code>:</p>
+<pre><code>def gaussian_kernel_2d(sigma):
+    ksize = 2 * int(np.ceil(3 * sigma)) + 1
+    g = cv2.getGaussianKernel(ksize, sigma)
+    return g @ g.T  # outer product -> 2D kernel</code></pre>
+<div class="grid c4">
+  <div><img src="images/results/p13_blur.jpg" alt="Gaussian blurred cameraman"><div class="cap">blurred (σ = 2)</div></div>
+  <div><img src="images/results/p13_dx.jpg" alt="dx of blurred"><div class="cap">∂/∂x of blurred</div></div>
+  <div><img src="images/results/p13_dy.jpg" alt="dy of blurred"><div class="cap">∂/∂y of blurred</div></div>
+  <div><img src="images/results/p13_mag.jpg" alt="Gradient magnitude of blurred"><div class="cap">gradient magnitude</div></div>
+</div>
+<div class="grid">
+  <div><img src="images/results/p12_thresh_20.jpg" alt="Edges, finite difference only"><div class="cap">finite difference only (threshold 0.20)</div></div>
+  <div><img src="images/results/p13_thresh_05.jpg" alt="Edges after blurring"><div class="cap">blur, then finite difference (threshold 0.05)</div></div>
+</div>
+<p>After blurring, the grass noise was mostly gone and the edges became much more continuous. However, some fine
+details such as the building windows were also removed. The edges also became wider because the blur softened the
+transitions.</p>
+<p>The gradient values became smaller after blurring, so I had to lower the threshold from 0.20 to 0.05.</p>
+<p>Since convolution is associative, I could also combine the Gaussian and derivative filters into one filter and
+apply it directly to the image:</p>
+<pre><code>dog_x = convolve2d(G, Dx, mode="full")
+dog_y = convolve2d(G, Dy, mode="full")
+gx = convolve2d(cam, dog_x, mode="same", boundary="symm")
+gy = convolve2d(cam, dog_y, mode="same", boundary="symm")</code></pre>
+<div class="grid">
+  <div><img class="filter" src="images/results/p13_dogx_filter.jpg" alt="DoG x filter"><div class="cap">DoG<sub>x</sub> filter</div></div>
+  <div><img class="filter" src="images/results/p13_dogy_filter.jpg" alt="DoG y filter"><div class="cap">DoG<sub>y</sub> filter</div></div>
+</div>
+<div class="grid c4">
+  <div><img src="images/results/p13_dogdx.jpg" alt="DoG x response"><div class="cap">DoG<sub>x</sub> response</div></div>
+  <div><img src="images/results/p13_dogdy.jpg" alt="DoG y response"><div class="cap">DoG<sub>y</sub> response</div></div>
+  <div><img src="images/results/p13_dogmag.jpg" alt="DoG gradient magnitude"><div class="cap">magnitude</div></div>
+  <div><img src="images/results/p13_dogthresh.jpg" alt="DoG binarized edges"><div class="cap">edges (threshold 0.05)</div></div>
+</div>
+<p>I checked the results from both methods and they were essentially identical (the largest difference was
+2e-15).</p>
+<div class="takeaway"><b>Takeaway</b>Blurring removes noise, while derivatives highlight changes in brightness.
+Combining the two gives a much cleaner way of detecting edges.</div>
+
+<!-- ============================================================ -->
+</section>
+
+<section class="block">
+<h3 id="p1bw"><span class="num">Bells &amp; Whistles:</span>Gradient orientation in colour</h3>
+<p>I also looked at the direction of the gradient, not just its magnitude.</p>
+<p>I represented the gradient direction using hue and the edge strength using brightness. This means that edges
+pointing in different directions appear as different colours, while stronger edges appear brighter. Since built-in
+angle functions weren't allowed, I wrote my own <code>atan2</code> using a polynomial approximation of arctan.</p>
+<details>
+<summary>Show the atan2 code</summary>
+<pre><code>def my_atan(z):  # only works for |z| &lt;= 1
+    z2 = z * z
+    return z * (0.9998660 + z2 * (-0.3302995 + z2 * (0.1801410 + z2 * (-0.0851330 + z2 * 0.0208351))))
+
+def my_atan2(y, x):
+    ax, ay = np.abs(x), np.abs(y)
+    big, small = np.maximum(ax, ay), np.minimum(ax, ay)
+    ratio = np.where(big &gt; 0, small / np.where(big &gt; 0, big, 1), 0)
+    a = my_atan(ratio)
+    a = np.where(ay &gt; ax, np.pi / 2 - a, a)
+    a = np.where(x &lt; 0, np.pi - a, a)
+    a = np.where(y &lt; 0, -a, a)
+    return a
+
+hue = (theta % (2 * np.pi)) / (2 * np.pi)
+rgb = hsv_to_rgb(np.dstack([hue, np.ones_like(hue), magnitude_scaled]))</code></pre>
+</details>
+<div class="grid" style="grid-template-columns: 3fr 1.3fr; align-items:center">
+  <div><img src="images/results/bw_orientation.jpg" alt="Gradient orientation as hue"><div class="cap">hue = gradient direction, brightness = edge strength</div></div>
+  <div><img src="images/results/bw_wheel.jpg" alt="Hue color wheel"><div class="cap">legend</div></div>
+</div>
+<p>One interesting thing I noticed is that the two sides of a thin object can have opposite colours because the
+gradient points from dark to bright. Edges that face the same direction have similar colours.</p>
+
+<!-- ============================================================ -->
+</section>
+
+<h2 id="part2"><span class="num">Part 2</span>Fun with Frequencies</h2>
+
+<section class="block">
+<h3 id="p21"><span class="num">2.1</span>Image sharpening</h3>
+<p>For sharpening, I used the idea that a Gaussian blur removes high-frequency details from an image.</p>
+<p>If I subtract the blurred image from the original, I get the details that were removed by the blur. I can then
+add some of these details back to the original to make it look sharper. This can be combined into a single
+convolution, the unsharp mask filter:</p>
+<p class="math">\[\text{sharpened} = f + \alpha\,(f - f * G) = f * \big((1+\alpha)\,\delta - \alpha\,G\big)\]</p>
+<pre><code>def unsharp_kernel(sigma, alpha):
+    g = gaussian_kernel_2d(sigma)
+    delta = np.zeros_like(g)
+    delta[g.shape[0] // 2, g.shape[1] // 2] = 1.0
+    return (1 + alpha) * delta - alpha * g
+
+def unsharp(image, sigma, alpha):
+    kernel = unsharp_kernel(sigma, alpha)
+    chans = [convolve2d(image[:, :, c], kernel, mode="same", boundary="symm") for c in range(3)]
+    return np.clip(np.dstack(chans), 0, 1)</code></pre>
+
+<h4>Taj Mahal (σ = 2)</h4>
+<div class="grid c3">
+  <div><img src="images/results/sh_taj_orig.jpg" alt="Taj original"><div class="cap">original</div></div>
+  <div><img src="images/results/sh_taj_blur.jpg" alt="Taj blurred"><div class="cap">blurred (low frequencies)</div></div>
+  <div><img src="images/results/sh_taj_high.jpg" alt="Taj high frequencies"><div class="cap">original − blurred (high frequencies, ×4)</div></div>
+</div>
+<div class="grid c4">
+  <div><img src="images/results/sh_taj_a0.5.jpg" alt="Taj alpha 0.5"><div class="cap">α = 0.5</div></div>
+  <div><img src="images/results/sh_taj_a1.jpg" alt="Taj alpha 1"><div class="cap">α = 1</div></div>
+  <div><img src="images/results/sh_taj_a2.jpg" alt="Taj alpha 2"><div class="cap">α = 2</div></div>
+  <div><img src="images/results/sh_taj_a4.jpg" alt="Taj alpha 4"><div class="cap">α = 4</div></div>
+</div>
+<p>I tried different values of α on the Taj Mahal image. With α = 0.5 or 1, the image looked naturally sharper.
+Increasing α to 2 made the carvings stand out more, but at α = 4, I started seeing bright and dark
+halos around strong edges.</p>
+<p>This showed me that sharpening is basically increasing the contrast around edges. If I push it too far, the image
+starts to look unnatural.</p>
+
+<h4>An out-of-focus elk (σ = 4)</h4>
+<div class="grid c3">
+  <div><img src="images/results/sh_blurry_orig.jpg" alt="Blurry elk photo"><div class="cap">original (out of focus)</div></div>
+  <div><img src="images/results/sh_blurry_blur.jpg" alt="Elk low frequencies"><div class="cap">blurred (low frequencies)</div></div>
+  <div><img src="images/results/sh_blurry_high.jpg" alt="Elk high frequencies"><div class="cap">high frequencies (×4)</div></div>
+</div>
+<div class="grid c4">
+  <div><img src="images/results/sh_blurry_a1.jpg" alt="Elk alpha 1"><div class="cap">α = 1</div></div>
+  <div><img src="images/results/sh_blurry_a2.jpg" alt="Elk alpha 2"><div class="cap">α = 2</div></div>
+  <div><img src="images/results/sh_blurry_a4.jpg" alt="Elk alpha 4"><div class="cap">α = 4</div></div>
+  <div><img src="images/results/sh_blurry_a8.jpg" alt="Elk alpha 8"><div class="cap">α = 8</div></div>
+</div>
+<p>I also tried sharpening a photo of an elk that was already out of focus. The sharpening made the outline of the
+elk and trees more defined, but after around α = 4, the image mostly became grainier instead of sharper.</p>
+<p>This made sense because real defocus blur removes fine details completely. Sharpening can bring out details that
+are still present, but it cannot recreate details that were completely lost.</p>
+
+<h4>Blur a sharp photo, then sharpen it back</h4>
+<p>I also tested this by intentionally blurring a sharp glacier photo (σ = 2) and then sharpening it again. The top row is a crop of the rocky ridge on the right side of the photo, enlarged 3× so the detail is easier to see. The bottom row is the full photo.</p>
+<div class="grid c4">
+  <div><img src="images/results/sh_eval_zoom_orig.jpg" alt="Original crop"><div class="cap">original</div></div>
+  <div><img src="images/results/sh_eval_zoom_blur.jpg" alt="Blurred crop"><div class="cap">blurred</div></div>
+  <div><img src="images/results/sh_eval_zoom_a1.jpg" alt="Sharpened alpha 1 crop"><div class="cap">sharpened, α = 1</div></div>
+  <div><img src="images/results/sh_eval_zoom_a4.jpg" alt="Sharpened alpha 4 crop"><div class="cap">sharpened, α = 4</div></div>
+</div>
+<div class="grid c4">
+  <div><img src="images/results/sh_eval_orig.jpg" alt="Original photo"><div class="cap">original</div></div>
+  <div><img src="images/results/sh_eval_blur.jpg" alt="Blurred photo"><div class="cap">blurred (σ = 2)</div></div>
+  <div><img src="images/results/sh_eval_a1.jpg" alt="Sharpened alpha 1"><div class="cap">α = 1</div></div>
+  <div><img src="images/results/sh_eval_a2.jpg" alt="Sharpened alpha 2"><div class="cap">α = 2</div></div>
+</div>
+<p>The sharpened version was closer to the original than the blurred version, especially around α = 1–2. However, it
+still could not fully recover the smallest details.</p>
+<div class="takeaway"><b>Takeaway</b>Sharpening can strengthen existing details, but it cannot magically bring back
+information that is no longer there.</div>
+
+<!-- ============================================================ -->
+</section>
+
+<section class="block">
+<h3 id="p22"><span class="num">2.2</span>Hybrid images</h3>
+<p>For hybrid images, I combined the low frequencies of one image with the high frequencies of another.</p>
+<p>The idea is that when we look at an image from close up, we notice more fine details, while from far away, we
+mainly see the larger shapes. This allows the same image to look different depending on how far away we are.</p>
+<pre><code>def hybrid(low_img, high_img, sigma_low, sigma_high):
+    low = blur(low_img, sigma_low)
+    high = high_img - blur(high_img, sigma_high)
+    return low, high, np.clip(low + high, 0, 1)</code></pre>
+
+<h4>Derek + Nutmeg</h4>
+<p>For my first hybrid, I used Derek and Nutmeg. I aligned their eyes first because the alignment is really
+important. If the eyes are in different positions, the result looks like two faces placed on top of each other
+instead of one combined face.</p>
+<div class="grid c3">
+  <div><img src="images/results/hy_derek.jpg" alt="Derek"><div class="cap">Derek (low frequencies)</div></div>
+  <div><img src="images/results/hy_nutmeg.jpg" alt="Nutmeg original"><div class="cap">Nutmeg, original</div></div>
+  <div><img src="images/results/hy_nutmeg_aligned.jpg" alt="Nutmeg aligned"><div class="cap">Nutmeg, aligned (high frequencies)</div></div>
+</div>
+<div class="grid">
+  <div><img src="images/results/hy_derek_low.jpg" alt="Derek low-passed"><div class="cap">Derek, low-passed (σ = 8)</div></div>
+  <div><img src="images/results/hy_nutmeg_high.jpg" alt="Nutmeg high-passed"><div class="cap">Nutmeg, high-passed (σ = 4)</div></div>
+</div>
+<p>I used Derek for the low frequencies and Nutmeg for the high frequencies. For the cutoffs, I used σ = 8 for
+Derek (about 0.020 cycles/pixel) and σ = 4 for Nutmeg (about 0.040 cycles/pixel), after comparing a few options
+up close and shrunk down.</p>
+<div class="grid c3">
+  <div><img src="images/results/hy_cutoff_4_2.jpg" alt="Hybrid with sigma 4 and 2"><img src="images/results/hy_cutoff_4_2_far.jpg" alt="small" class="tiny"><div class="cap">σ = 4 / 2: Derek still clear up close</div></div>
+  <div><img src="images/results/hy_cutoff_8_4.jpg" alt="Hybrid with sigma 8 and 4"><img src="images/results/hy_cutoff_8_4_far.jpg" alt="small" class="tiny"><div class="cap"><b>σ = 8 / 4 (my choice)</b></div></div>
+  <div><img src="images/results/hy_cutoff_16_8.jpg" alt="Hybrid with sigma 16 and 8"><img src="images/results/hy_cutoff_16_8_far.jpg" alt="small" class="tiny"><div class="cap">σ = 16 / 8: the cat shows even from far</div></div>
+</div>
+<p>With smaller σ values, too much of Derek's detail stayed in, so up close he was still obvious and the cat was
+only a faint overlay. With larger σ values, the cat took over, and even the small version started to look like a
+cat. σ = 8 / 4 gave the cleanest switch between the two.</p>
+<figure>
+  <div class="grid" style="grid-template-columns: 3fr 1fr; align-items:end">
+    <div><img src="images/results/hy_derek_nutmeg.jpg" alt="Derek + Nutmeg hybrid"><div class="cap">up close: a cat</div></div>
+    <div><img src="images/results/hy_derek_nutmeg_far.jpg" alt="Derek + Nutmeg small" class="tiny"><div class="cap">from far: Derek</div></div>
+  </div>
+</figure>
+<p>When viewed up close, the cat is more obvious, while from far away, Derek becomes more visible.</p>
+<figure class="wide">
+  <img src="images/results/hy_fourier.jpg" alt="Fourier analysis of the hybrid">
+  <figcaption>top: grayscale images; bottom: log magnitude of their Fourier transforms</figcaption>
+</figure>
+<p>I also looked at the Fourier transforms of the images. The low-frequency image has most of its energy near the
+centre of the spectrum, while the high-frequency image has energy further away from the centre.</p>
+
+<h4>More hybrids</h4>
+<p>I tried a few other pairs as well, including Jisoo and Wonyoung, and Harry Potter and Hermione.</p>
+<div class="grid c4">
+  <div><img src="images/results/hy_jisoo.jpg" alt="Jisoo"><div class="cap">Jisoo (low)</div></div>
+  <div><img src="images/results/hy_wonyoung.jpg" alt="Wonyoung"><div class="cap">Wonyoung (high)</div></div>
+  <div><img src="images/results/hy_jisoo_wonyoung.jpg" alt="Hybrid of Jisoo and Wonyoung"><div class="cap">hybrid</div></div>
+  <div><img src="images/results/hy_jisoo_wonyoung_far.jpg" alt="Hybrid from far" class="tiny"><div class="cap">from far</div></div>
+</div>
+<div class="grid c4">
+  <div><img src="images/results/hy_potter.jpg" alt="Harry Potter"><div class="cap">Harry (low)</div></div>
+  <div><img src="images/results/hy_hermione.jpg" alt="Hermione"><div class="cap">Hermione (high)</div></div>
+  <div><img src="images/results/hy_potter_hermione.jpg" alt="Hybrid of Harry and Hermione"><div class="cap">hybrid</div></div>
+  <div><img src="images/results/hy_potter_hermione_far.jpg" alt="Hybrid from far" class="tiny"><div class="cap">from far</div></div>
+</div>
+<p>One thing I noticed is that the backgrounds can make a hybrid look less convincing. Even if the faces are aligned
+properly, details from one background can still remain visible. This means that the two images should ideally have
+similar poses, framing, and backgrounds.</p>
+
+<h4 id="p22bw">Bells &amp; Whistles: colour</h4>
+<div class="grid c4">
+  <div><img src="images/results/hy_color_gray.jpg" alt="Gray hybrid"><img src="images/results/hy_color_gray_far.jpg" alt="Gray hybrid small" class="tiny"><div class="cap">no colour</div></div>
+  <div><img src="images/results/hy_color_color_low.jpg" alt="Color low"><img src="images/results/hy_color_color_low_far.jpg" alt="Color low small" class="tiny"><div class="cap">colour in low</div></div>
+  <div><img src="images/results/hy_color_color_high.jpg" alt="Color high"><img src="images/results/hy_color_color_high_far.jpg" alt="Color high small" class="tiny"><div class="cap">colour in high</div></div>
+  <div><img src="images/results/hy_color_color_both.jpg" alt="Color both"><img src="images/results/hy_color_color_both_far.jpg" alt="Color both small" class="tiny"><div class="cap">colour in both</div></div>
+</div>
+<p>I also experimented with putting colour in different parts of the hybrid. Colour in the low-frequency image made
+the biggest difference because large smooth areas such as skin and backgrounds are mostly low-frequency
+information.</p>
+
+<!-- ============================================================ -->
+</section>
+
+<section class="block">
+<h3 id="p23"><span class="num">2.3</span>Gaussian and Laplacian stacks</h3>
+<p>To blend images properly, I needed more than just low and high frequencies. I therefore created Gaussian and
+Laplacian stacks.</p>
+<p>A Gaussian stack contains the image blurred by increasing amounts. A Laplacian stack contains the differences
+between consecutive Gaussian levels, so each level represents details at a different scale. Unlike a pyramid, every level stays the same size as the original, and I didn't use any built-in pyramid functions.</p>
+<pre><code>def gaussian_stack(image, levels, sigma0=2):
+    stack = [image]
+    for i in range(1, levels):
+        stack.append(blur(image, sigma0 * 2 ** (i - 1)))
+    return stack
+
+def laplacian_stack(image, levels, sigma0=2):
+    g = gaussian_stack(image, levels, sigma0)
+    lap = [g[i] - g[i + 1] for i in range(levels - 1)]
+    lap.append(g[-1])
+    return lap</code></pre>
+<figure class="wide">
+  <img src="images/results/st_apple.jpg" alt="Apple stacks">
+  <figcaption>apple: Gaussian stack (top), Laplacian stack (bottom)</figcaption>
+</figure>
+<figure class="wide">
+  <img src="images/results/st_orange.jpg" alt="Orange stacks">
+  <figcaption>orange: Gaussian stack (top), Laplacian stack (bottom)</figcaption>
+</figure>
+<p>When all the Laplacian levels are added back together, they reconstruct the original image. I checked this and
+the reconstruction error was extremely small (around 1e-16).</p>
+<p>Using these stacks on the apple and orange with a vertical mask, I recreated Figure 3.42 from Szeliski:</p>
+<figure>
+  <img src="images/results/bl_fig342.jpg" alt="Recreation of Figure 3.42" style="max-width:600px; margin:0 auto">
+  <figcaption>recreation of Szeliski Fig. 3.42 (a)–(l): levels 0, 2, 4 and the sum (rows); apple, orange, blend (columns)</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+</section>
+
+<section class="block">
+<h3 id="p24"><span class="num">2.4</span>Multiresolution blending</h3>
+<p>For the final part, I used the Gaussian and Laplacian stacks to blend two images together.</p>
+<p>Simply cutting one image and pasting it onto another creates an obvious seam. Blurring the mask helps, but if the
+blur is too large, the details from both images start to overlap and look ghosted.</p>
+<p>Multiresolution blending solves this by using a different seam width for different frequency bands. Fine details
+can switch quickly, while larger changes in colour and lighting can transition more gradually.</p>
+<p class="math">\[\text{blend} = \sum_i \Big[\, L_i(A)\, G_i(M) + L_i(B)\,\big(1 - G_i(M)\big) \Big]\]</p>
+<pre><code>def blend(img_a, img_b, mask, levels=6, sigma0=2):
+    la = laplacian_stack(img_a, levels, sigma0)
+    lb = laplacian_stack(img_b, levels, sigma0)
+    gm = gaussian_stack(mask, levels, sigma0)
+    bands = [la[i] * gm[i] + lb[i] * (1 - gm[i]) for i in range(levels)]
+    return np.clip(sum(bands), 0, 1), bands</code></pre>
+
+<h4>The Oraple</h4>
+<div class="grid">
+  <div><img src="images/results/bl_hard.jpg" alt="Hard seam apple/orange"><div class="cap">hard cut</div></div>
+  <div><img src="images/results/bl_oraple.jpg" alt="Oraple"><div class="cap"><b>multiresolution blend</b></div></div>
+</div>
+
+<h4>My own blends</h4>
+<p>I first tried using random masks on food photos, but the results looked messy. The blending itself was working,
+but the masks did not follow the objects in the images.</p>
+<p>This made me realise that <b>the mask is just as important as the blending algorithm</b>. A good mask should
+follow the object being blended and the two images should have similar structures around the seam.</p>
+<p>I then tried masks that follow the objects: the outline of a skyline, and the shape of a face.</p>
+
+<h4>Singapore skyline with Calgary's mountains</h4>
+<p>For this blend, I kept Singapore's skyline and replaced its sky with the Rocky Mountains from Calgary.</p>
+<div class="grid c4">
+  <div><img src="images/results/bl_skyline_a.jpg" alt="Singapore skyline"><div class="cap">Singapore</div></div>
+  <div><img src="images/results/bl_skyline_b.jpg" alt="Calgary mountains"><div class="cap">Calgary</div></div>
+  <div><img src="images/results/bl_skyline_mask.jpg" alt="Skyline mask"><div class="cap">skyline mask</div></div>
+  <div><img src="images/results/bl_skyline.jpg" alt="Singapore with the Rockies behind it"><div class="cap"><b>blend</b></div></div>
+</div>
+<div class="grid">
+  <div><img src="images/results/bl_skyline_naive.jpg" alt="Skyline hard paste"><div class="cap">hard paste</div></div>
+  <div><img src="images/results/bl_skyline.jpg" alt="Skyline blend"><div class="cap">multiresolution blend</div></div>
+</div>
+<p>The mask follows the outline of the buildings. To make it, I went down each column of the Singapore photo until
+the pixels stopped looking like sky (bright, blue or grey), and counted everything below that as city. With a hard
+paste, the cut-out edges around the towers are sharp and a leftover grey patch of Singapore's clouds shows up. After
+multiresolution blending, the sky changes smoothly and the mountains look like they are behind the city.</p>
+
+<h4>Cheetah face on a tabby cat ★</h4>
+<div class="grid c4">
+  <div><img src="images/results/bl_cheetahcat_a.jpg" alt="Cheetah aligned"><div class="cap">cheetah (aligned)</div></div>
+  <div><img src="images/results/bl_cheetahcat_b.jpg" alt="Tabby cat"><div class="cap">tabby cat</div></div>
+  <div><img src="images/results/bl_cheetahcat_mask.jpg" alt="Face mask"><div class="cap">face mask</div></div>
+  <div><img src="images/results/bl_cheetahcat.jpg" alt="Cheetah-cat"><div class="cap"><b>blend</b></div></div>
+</div>
+<p>This was my favourite blend. I aligned the cheetah's face with the tabby cat and used a mask around the face.</p>
+<p>The colours of the two animals were already fairly similar, which helped the blend. The cheetah's tear lines were
+still visible, while the cat's whiskers continued across the boundary.</p>
+<div class="grid">
+  <div><img src="images/results/bl_cheetahcat_naive.jpg" alt="Cheetah cat hard paste"><div class="cap">hard paste</div></div>
+  <div><img src="images/results/bl_cheetahcat.jpg" alt="Cheetah cat blend"><div class="cap">multiresolution blend</div></div>
+</div>
+<p>Comparing the hard paste with the multiresolution blend made the difference quite obvious. The hard paste has a
+clear boundary, while the multiresolution version gradually mixes the different frequency bands together.</p>
+<figure class="wide">
+  <img src="images/results/bl_cheetahcat_stack.jpg" alt="Laplacian stack process for the cheetah-cat blend">
+  <figcaption>rows: cheetah × mask, cat × (1 − mask), sum; columns: Laplacian levels 0 → 5</figcaption>
+</figure>
+<p>I also looked at the different Laplacian levels of the blend. At the finer levels, the fur and whiskers change
+more sharply. At the coarser levels, the transition becomes much wider and smoother.</p>
+
+<h4 id="p24bw">Bells &amp; Whistles: colour</h4>
+<div class="grid">
+  <div><img src="images/results/bl_skyline_gray.jpg" alt="Skyline blend, grayscale"><div class="cap">grayscale blend</div></div>
+  <div><img src="images/results/bl_skyline.jpg" alt="Skyline blend, colour"><div class="cap">colour blend</div></div>
+</div>
+<p>I also compared the colour and grayscale versions of the skyline blend.</p>
+<p>The grayscale version still blends, but it looks flatter, and the sky and the glass towers are harder to tell apart.
+In colour, the blue sky from Calgary goes well with Singapore's blue glass buildings, and the snow on the mountains
+stands out, so the scene looks more believable.</p>
+<p>Colour also makes blending harder because the colours need to transition smoothly as well as the brightness.
+Multiresolution blending helps with this because the low-frequency colour information gets a wider transition.</p>
+
+<!-- ============================================================ -->
+</section>
+
+<h2 id="learned">What I learned</h2>
+<p>The biggest thing I learned is that "sharp" and "smooth" are really about frequencies, and a simple Gaussian blur is enough to separate them.</p>
+<p>I also learned that getting the algorithm right is not always enough. For the image blending part, the alignment,
+image choice and mask were just as important as the actual blending method.</p>
+<p>Even small implementation details can make a difference too. For example, the way the image boundary is handled
+can create fake edges if it is not done carefully.</p>
+<p>Overall, this project helped me understand how the same basic idea of separating frequencies can be used for
+<b>edge detection, sharpening, hybrid images, and blending</b>.</p>
+
+<footer>
+  Image credits for 2.4: Singapore, "Singapore Skyline Panorama (54146978992)" (Wikimedia Commons, CC0); Calgary, "Rocky Mountains - Alberta, Canada (1490902735)" (Wikimedia Commons, CC BY-SA 2.0). Apple, orange, Taj Mahal, Derek and Nutmeg are from the course.
+  Code: <code>2/code/</code> (see <code>2/README.md</code>).
+</footer>
+</main>
+</div>
+
+<script src="../assets/blog.js"></script>
+</body>
+</html>

@@ -1,5 +1,8 @@
 venv/
 __pycache__/
-1/CS180_fa2026_proj1_data/
-1/out_path/
+1/images/course/
+1/images/output/
 .DS_Store
+2/images/course/
+2/images/unused/
+2/starter_code/

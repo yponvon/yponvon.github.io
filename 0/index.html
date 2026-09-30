@@ -1,85 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Project 0: Becoming Friends with Your Camera</title>
-    <style>
-        html {
-            min-height: 100%;
-            background: url('media/web/background.jpg');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-        }
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px auto;
-            max-width: 800px;
-            line-height: 1.5;
-            color: #f0f0f5;
-        }
-        h1 {
-            font-size: 1.6em;
-        }
-        h2 {
-            margin-top: 2em;
-        }
-        img, .side-by-side img {
-            max-width: 100%;
-            display: block;
-            margin: 10px 0;
-        }
-        .side-by-side {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .side-by-side > div {
-            flex: 1;
-            min-width: 250px;
-        }
-        p.caption {
-            color: #b8b8c8;
-            font-size: 0.9em;
-            margin-top: -4px;
-        }
-        a {
-            color: #8ab4f8;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Becoming Friends with Your Camera</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/blog.css">
 </head>
 <body>
-    <p><a href="../index.html">&larr; back home</a></p>
-    <h1>Project 0: Becoming Friends with Your Camera</h1>
+<div class="layout">
 
-    <h2>Part 1: Taking a photo </h2>
+<nav class="toc">
+  <div class="label">Contents</div>
+</nav>
+
+<main>
+<a class="back" href="../index.html">&larr; all projects</a>
+
+<header class="hero">
+  <div class="kicker">CS180 · Project 0</div>
+  <h1>Becoming Friends with Your Camera</h1>
+</header>
+<section class="block">
+<h2 id="part-1-taking-a-photo"><span class="num">Part 1</span>Taking a photo</h2>
     <p>For the first photo, I took a picture of my friend Timothy from close up with no zoom, which made his face have a warped look. For the second, I stepped back and zoomed in until his face was about the same size in the frame. This made the proportions of his face better and more natural.</p>
-    <div class="side-by-side">
+    <div class="grid">
         <div>
-            <img src="media/web/selfie-close.jpg" alt="Close-up photo of Timothy">
-            <p class="caption">Close up</p>
+            <img src="images/results/selfie-close.jpg" alt="Close-up photo of Timothy">
+            <div class="cap">Close up</div>
         </div>
         <div>
-            <img src="media/web/selfie-far.jpg" alt="Stepped back, zoomed-in photo of Timothy">
-            <p class="caption">Stepped back + zoomed in</p>
+            <img src="images/results/selfie-far.jpg" alt="Stepped back, zoomed-in photo of Timothy">
+            <div class="cap">Stepped back + zoomed in</div>
         </div>
     </div>
+</section>
 
-    <h2>Part 2: Architectural Perspective Compression</h2>
+<section class="block">
+<h2 id="part-2-architectural-perspective-compression"><span class="num">Part 2</span>Architectural Perspective Compression</h2>
     <p> I was walking around the school looking for a building and the clock tower happened to be sounding thus I took pictures of the building with the clock tower as the background. Here, I first zoomed in on the building from far away, then walked up close and took the same shot without zoom, matching the size of the building in both frames. The zoomed-in photo looks flatter and more compressed, like the building and the clock tower behind it are squeezed closer together. The close-up photo has much more depth.</p>
-    <div class="side-by-side">
+    <div class="grid">
         <div>
-            <img src="media/web/arch-zoomed.jpg" alt="Zoomed in from far away">
-            <p class="caption">Zoomed in from far away</p>
+            <img src="images/results/arch-zoomed.jpg" alt="Zoomed in from far away">
+            <div class="cap">Zoomed in from far away</div>
         </div>
         <div>
-            <img src="media/web/arch-walked.jpg" alt="Walked closer, no zoom">
-            <p class="caption">Walked closer, no zoom</p>
+            <img src="images/results/arch-walked.jpg" alt="Walked closer, no zoom">
+            <div class="cap">Walked closer, no zoom</div>
         </div>
     </div>
+</section>
 
-    <h2>Part 3: The Dolly Zoom</h2>
+<section class="block">
+<h2 id="part-3-the-dolly-zoom"><span class="num">Part 3</span>The Dolly Zoom</h2>
     <p>For the dolly zoom, I picked a bulletin board covered in flyers as my subject. </p>
-    <img src="media/web/dolly-zoom.gif" alt="Dolly zoom animation">
+    <img src="images/results/dolly-zoom.gif" alt="Dolly zoom animation">
+</section>
 
+</main>
+</div>
+
+<script src="../assets/blog.js"></script>
 </body>
 </html>
