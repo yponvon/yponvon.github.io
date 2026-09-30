@@ -1,55 +1,82 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>CS180 Portfolio</title>
-    <style>
-        html {
-            min-height: 100%;
-            background: url('assets/background.jpg');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-        }
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px auto;
-            max-width: 800px;
-            line-height: 1.5;
-            color: #f0f0f5;
-        }
-        .content-box {
-            background: rgba(10, 10, 25, 0.55);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 12px;
-            padding: 32px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-        }
-        h1 {
-            font-size: 1.6em;
-            margin-top: 0;
-        }
-        .project-btn {
-            display: block;
-            margin-top: 12px;
-            padding: 12px 20px;
-            background: #222;
-            color: #fff;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: bold;
-        }
-        .project-btn:hover {
-            background: #444;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CS180 Portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/blog.css">
+<style>
+  .home { max-width: 980px; margin: 0 auto; padding: 56px 24px 80px; }
+  .home main { padding: 44px 48px 48px; }
+  @media (max-width: 700px) { .home { padding: 16px 10px 40px; } .home main { padding: 28px 18px 32px; } }
+  .home header.hero { margin: 0 0 36px; }
+  .home .dek { max-width: 620px; }
+  .projects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  @media (max-width: 860px) { .projects { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .projects { grid-template-columns: 1fr; } }
+  a.card {
+    display: flex; flex-direction: column; text-decoration: none; color: var(--ink);
+    background: rgba(255, 255, 255, .04); border: 1px solid var(--line); border-radius: 14px;
+    overflow: hidden; transition: transform .18s ease, border-color .18s ease, background .18s ease;
+  }
+  a.card:hover { transform: translateY(-4px); border-color: rgba(196, 177, 255, .55); background: rgba(143, 123, 255, .1); }
+  a.card img {
+    width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 0; box-shadow: none; cursor: pointer;
+  }
+  a.card img:hover { transform: none; }
+  .card .body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .card .num { font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .card h2 {
+    font-size: 20px; margin: 0; padding: 0; border: none; line-height: 1.25;
+  }
+  .card p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+  .card .go { margin-top: auto; padding-top: 10px; font-size: 13.5px; font-weight: 600; color: var(--accent); }
+  a.card:hover .go { color: #fff; }
+</style>
 </head>
 <body>
-    <div class="content-box">
-        <h1>My CS180 Portfolio</h1>
-        <p>Projects for CS180: Intro to Computer Vision and Computational Photography.</p>
-        <a class="project-btn" href="./0/index.html">Project 0: Becoming Friends with Your Camera</a>
-        <a class="project-btn" href="./1/index.html">Project 1: Images of the Russian Empire</a>
-        <a class="project-btn" href="./2/index.html">Project 2: Fun with Filters and Frequencies</a>
-    </div>
+<div class="home">
+<main>
+  <header class="hero">
+    <div class="kicker">CS180 · Intro to Computer Vision and Computational Photography</div>
+    <h1>My CS180 Portfolio</h1>
+    <p class="dek">A collection of my projects for CS180, from playing with my camera to filtering, blending and
+    rebuilding images with code.</p>
+  </header>
+
+  <div class="projects">
+    <a class="card" href="0/index.html">
+      <img src="0/images/results/arch-zoomed.jpg" alt="Building with the clock tower behind it">
+      <div class="body">
+        <span class="num">Project 0</span>
+        <h2>Becoming Friends with Your Camera</h2>
+        <p>Perspective, zoom and compression, and a dolly zoom of my own.</p>
+        <span class="go">Read →</span>
+      </div>
+    </a>
+    <a class="card" href="1/index.html">
+      <img src="1/images/results/emir-edges.jpg" alt="Aligned colour photo of the Emir">
+      <div class="body">
+        <span class="num">Project 1</span>
+        <h2>Images of the Russian Empire</h2>
+        <p>Aligning Prokudin-Gorskii's glass plates into colour photos with an image pyramid.</p>
+        <span class="go">Read →</span>
+      </div>
+    </a>
+    <a class="card" href="2/index.html">
+      <img src="2/images/results/bl_cheetahcat.jpg" alt="A cheetah's face blended onto a tabby cat">
+      <div class="body">
+        <span class="num">Project 2</span>
+        <h2>Fun with Filters and Frequencies</h2>
+        <p>Edges, sharpening, hybrid images and multiresolution blending.</p>
+        <span class="go">Read →</span>
+      </div>
+    </a>
+  </div>
+</main>
+</div>
 </body>
 </html>
