@@ -45,3 +45,8 @@ python code/collect_results.py ~/Downloads/<run-name>.zip
 ```
 
 This writes `images/results/` and prints the numbers the webpage quotes (best blur σ, reconstruction MSEs).
+
+The anagrams and hybrids on the page (3.3 and 3.4) come from a second run of only those cells, with my own prompts
+and two seeds per pair. I picked the better seed of each by hand and saved them as `p33_island_cat`,
+`p33_balloon_owl`, `p34_fuji_koi` and `p34_face_blossom` (`collect_results.py` doesn't handle that partial run).
+`p33_cover_cat.jpg` is the home page card: the cat anagram with extra sky added on top so the cat sits in the middle.

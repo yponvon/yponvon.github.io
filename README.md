@@ -9,6 +9,7 @@ My CS180 (Intro to Computer Vision and Computational Photography) project websit
 | Project 0: Becoming Friends with Your Camera | https://yponvon.github.io/0/ |
 | Project 1: Images of the Russian Empire | https://yponvon.github.io/1/ |
 | Project 2: Fun with Filters and Frequencies | https://yponvon.github.io/2/ |
+| Project 3: Flow Models | https://yponvon.github.io/3/ |
 
 ## Folders
 
@@ -28,13 +29,19 @@ yponvon.github.io/
 │   ├── index.html
 │   ├── code/         alignment code
 │   └── images/results/
-└── 2/                Project 2 (see 2/README.md)
-    ├── index.html
-    ├── code/         filters, hybrids, stacks and blending (run code/main.py)
-    └── images/       inputs (mine, downloaded) and results/
+├── 2/                Project 2 (see 2/README.md)
+│   ├── index.html
+│   ├── code/         filters, hybrids, stacks and blending (run code/main.py)
+│   └── images/       inputs (mine, downloaded) and results/
+└── 3/                Project 3 (see 3/README.md)
+    ├── index.html    Part A and Part B on one page
+    ├── parta_updated.ipynb, partb.ipynb   course notebooks with my code (run on Colab with a GPU)
+    ├── code/         collect_results.py, copies the notebooks' results into images/results/
+    └── images/results/
 ```
 
-Course-provided data and scratch outputs (`*/images/course/`, `1/images/output/`, `2/images/unused/`, starter code)
+Course-provided data and scratch outputs (`*/images/course/`, `1/images/output/`, `2/images/unused/`, starter code,
+`3/content/`)
 are listed in `.gitignore` and are not committed.
 
 ## How the pages are built
@@ -56,6 +63,12 @@ are listed in `.gitignore` and are not committed.
 
 Run the code in each project's `code/` folder to regenerate the figures in `images/results/`
 (details in `1/README.md` and `2/README.md`).
+
+### Project 3
+
+1. Ran `3/parta_updated.ipynb` (pretrained PixNerd flow model) and `3/partb.ipynb` (UNets trained on MNIST) on
+   Colab with a GPU. Each notebook zips its results at the end.
+2. Turned each zip into the page's images with `python 3/code/collect_results.py <zip>` (details in `3/README.md`).
 
 ## Viewing locally
 
