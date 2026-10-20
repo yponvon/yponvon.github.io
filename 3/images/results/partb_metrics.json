@@ -1,0 +1,29 @@
+{
+  "seed": 180,
+  "group": "all",
+  "torch": "2.11.0+cu130",
+  "device": "cuda",
+  "gpu": "Tesla T4",
+  "visible_devices": null,
+  "precision": "float32 with TF32 convolution/matmul enabled",
+  "denoise_final_loss": 0.008229811266064644,
+  "pure_noise_final_loss": 0.06747394308447838,
+  "time": {
+    "final_loss": 0.09287378937005997,
+    "train_seconds": 416.3608749740001,
+    "lr": 0.01,
+    "scheduler": true
+  },
+  "class": {
+    "final_loss": 0.08322491809725761,
+    "train_seconds": 434.6469567219999,
+    "lr": 0.01,
+    "scheduler": true
+  },
+  "class_no_scheduler": {
+    "final_loss": 0.08421510927379132,
+    "train_seconds": 434.7732871819999,
+    "lr": 0.001,
+    "scheduler": false
+  }
+}

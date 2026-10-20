@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Models</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/blog.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters: [{left: '\\[', right: '\\]', display: true}]})"></script>
+<style>
+  .c5 { --cols: 5; }
+  @media (max-width: 640px) { .c5 { --cols: 3; } }
+  .row-label { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 18px 0 -8px; }
+  .prompt { font-style: italic; color: #fff; }
+  .hybrid-small { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+  .hybrid-small img { width: 64px; image-rendering: auto; }
+  /* TODO boxes: text to write once the real results are in. Remove before submitting. */
+  /* one banner per assignment part, so Part A and Part B read as two chapters */
+  .part-banner {
+    margin: 72px 0 8px; padding: 26px 30px; border-radius: 14px;
+    background: linear-gradient(120deg, rgba(143, 123, 255, .28), rgba(143, 123, 255, .06));
+    border: 1px solid rgba(196, 177, 255, .35);
+  }
+  header.hero + .part-banner { margin-top: 8px; }
+  .part-banner .title { font: 600 30px/1.2 "Space Grotesk", Inter, sans-serif; color: #fff; margin-top: 4px; }
+  .part-banner + h2 { margin-top: 32px; padding-top: 0; border-top: none; }
+  nav.toc .label.toc-part { margin-top: 14px; }
+  /* two parts make the contents list taller than the screen, so let it scroll */
+  nav.toc { margin-top: 0; max-height: calc(100vh - 64px); overflow-y: auto; }
+  table.arch td:first-child { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <div class="label">Part A · Pretrained model</div>
+  <a href="#setup">Setup</a>
+  <a href="#a-part1">Part 1 · Training &amp; sampling</a>
+  <a class="sub" href="#a11">1.1 Noisy inputs</a>
+  <a class="sub" href="#a12">1.2 Classical denoising</a>
+  <a class="sub" href="#a13">1.3 One-step denoising</a>
+  <a class="sub" href="#a14">1.4 Visualizing velocity</a>
+  <a class="sub" href="#a15">1.5 Euler sampling</a>
+  <a class="sub" href="#a16">1.6 Images from noise</a>
+  <a href="#a-part2">Part 2 · Guidance</a>
+  <a class="sub" href="#a21">2.1 Classifier-free guidance</a>
+  <a href="#a-part3">Part 3 · Creative applications</a>
+  <a class="sub" href="#a31">3.1 Image-to-image editing</a>
+  <a class="sub" href="#a32">3.2 Text-guided editing</a>
+  <a class="sub" href="#a33">3.3 Visual anagrams</a>
+  <a class="sub" href="#a34">3.4 Hybrid images</a>
+  <div class="label toc-part">Part B · From scratch</div>
+  <a href="#b-intro">Setup</a>
+  <a href="#b-part1">Part 1 · Denoising UNet</a>
+  <a class="sub" href="#b11">1.1 The UNet</a>
+  <a class="sub" href="#b12">1.2 Noising</a>
+  <a class="sub" href="#b121">1.2.1 Training</a>
+  <a class="sub" href="#b122">1.2.2 Out-of-distribution</a>
+  <a class="sub" href="#b123">1.2.3 Denoising pure noise</a>
+  <a href="#b-part2">Part 2 · Flow matching</a>
+  <a class="sub" href="#b21">2.1 Time conditioning</a>
+  <a class="sub" href="#b22">2.2 Training</a>
+  <a class="sub" href="#b23">2.3 Sampling</a>
+  <a class="sub" href="#b24">2.4 Class conditioning</a>
+  <a class="sub" href="#b25">2.5 Training</a>
+  <a class="sub" href="#b26">2.6 Sampling</a>
+  <a href="#learned">What I learned</a>
+</nav>
+
+<main>
+<a class="back" href="../index.html">&larr; all projects</a>
+
+<header class="hero">
+  <div class="kicker">CS180 · Project 3</div>
+  <h1>Flow Models</h1>
+  <p class="dek">Part A: exploring a large pretrained text-to-image flow model.<br>Part B: building and training my own
+  flow model on MNIST, from scratch.</p>
+</header>
+
+<!-- ============================================================ -->
+<div class="part-banner" id="part-a">
+  <div class="kicker">Part A</div>
+  <div class="title">Exploring the Power of Flow Models</div>
+</div>
+
+<h2 id="setup">Setup</h2>
+<p>For this project what was used was a pretrained text-to-image flow model, <b>PixNerd-XXL-P16-T2I</b>, which makes 512×512
+images straight in pixel space.</p>
+<p>A flow model moves an image along a path between pure noise and a clean image. I used the linear path, where
+time <code>t = 0</code> is pure noise <code>ε</code> and <code>t = 1</code> is the clean image <code>x₁</code>:</p>
+<p class="math">\[x_t = (1-t)\,\epsilon + t\,x_1, \qquad \epsilon \sim \mathcal{N}(0, I)\]</p>
+<p>Along this path the image changes at a constant speed, so the velocity is just <code>x₁ − ε</code>. Given a noisy
+image, the time and a text prompt, the model predicts this velocity:</p>
+<p class="math">\[\hat v = v_\theta(x_t, t, c) \approx x_1 - \epsilon\]</p>
+<p>Every image is center-cropped to a square, resized to 512×512, and scaled to RGB values in [−1, 1].</p>
+
+<!-- ============================================================ -->
+<h2 id="a-part1"><span class="num">Part 1</span>Visualizing Training and Sampling</h2>
+
+<section class="block">
+<h3 id="a11"><span class="num">1.1</span>Constructing noisy training inputs</h3>
+<p>The first step is a function that places an image at any point on the path between noise and the clean image. It
+is simply a weighted mix of the two:</p>
+<pre><code>def interpolate(image, noise, t):
+    # x_t = (1 - t) * eps + t * x_1: t = 0 is pure noise, t = 1 is the clean image.
+    return (1 - t) * noise + t * image</code></pre>
+<p>I sampled <b>one</b> noise tensor and reused it at t = 0.25, 0.50 and 0.75, so the only thing that changes between
+the three images is how much noise is mixed in. I saved the image, the noise and the three noisy inputs so the next
+sections all work on exactly the same inputs.</p>
+<div class="grid c4">
+  <div><img src="images/results/p11_original.jpg" alt="Original Eiffel Tower photo"><div class="cap">original (t = 1)</div></div>
+  <div><img src="images/results/p11_noisy_t025.jpg" alt="Noisy image at t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p11_noisy_t050.jpg" alt="Noisy image at t = 0.50"><div class="cap">t = 0.50</div></div>
+  <div><img src="images/results/p11_noisy_t075.jpg" alt="Noisy image at t = 0.75"><div class="cap">t = 0.75</div></div>
+</div>
+<p>At t = 0.25 the image is mostly noise: I can only just make out the dark outline of the tower and the tree in the corner. At 0.50 the whole tower is clear but every surface is covered in coloured speckles, and at 0.75 it looks like a grainy photo where even the ironwork shows through.</p>
+</section>
+
+<section class="block">
+<h3 id="a12"><span class="num">1.2</span>Classical denoising</h3>
+<p>As a baseline, I tried removing the noise with a Gaussian blur. The noisy image only contains
+<code>t·x₁</code> of the clean image, so I divided by <code>t</code> first to bring the brightness back to the right
+level, then blurred:</p>
+<pre><code>candidates = {s: gaussian_blur(x / t, [int(6*s + 1)] * 2, [s, s]) for s in [1., 2., 4., 8., 16.]}
+sigma = min(candidates, key=lambda s: ((candidates[s] - image) ** 2).mean().item())</code></pre>
+<p>For each noise level I tried σ = 1, 2, 4, 8 and 16, and kept the one closest to the original image (lowest mean
+squared error).</p>
+<div class="grid c3">
+  <div><img src="images/results/p11_noisy_t025.jpg" alt="Noisy input at t = 0.25"><div class="cap">noisy, t = 0.25</div></div>
+  <div><img src="images/results/p11_noisy_t050.jpg" alt="Noisy input at t = 0.50"><div class="cap">noisy, t = 0.50</div></div>
+  <div><img src="images/results/p11_noisy_t075.jpg" alt="Noisy input at t = 0.75"><div class="cap">noisy, t = 0.75</div></div>
+  <div><img src="images/results/p12_blur_t025.jpg" alt="Best Gaussian blur at t = 0.25"><div class="cap">best blur, σ = <b>8</b></div></div>
+  <div><img src="images/results/p12_blur_t050.jpg" alt="Best Gaussian blur at t = 0.50"><div class="cap">best blur, σ = <b>2</b></div></div>
+  <div><img src="images/results/p12_blur_t075.jpg" alt="Best Gaussian blur at t = 0.75"><div class="cap">best blur, σ = <b>1</b></div></div>
+</div>
+<p>The best σ goes down as the image gets cleaner: σ = 8 at t = 0.25, 2 at 0.50 and 1 at 0.75. At t = 0.25 the blur that removes enough noise also removes the whole lattice, leaving a soft brown shape, and even at 0.75 the best blur still leaves coloured blotches in the sky. A blur can only trade noise for detail; it has no idea what a tower should look like.</p>
+</section>
+
+<section class="block">
+<h3 id="a13"><span class="num">1.3</span>One-step denoising</h3>
+<p>Next, I used the model. Since the velocity points from the noise to the clean image, I can jump straight to
+<code>t = 1</code> by following it for the remaining time <code>1 − t</code>:</p>
+<p class="math">\[\hat x_1 = x_t + (1-t)\,v_\theta(x_t, t, c)\]</p>
+<pre><code>def one_step_denoise(x, t, condition, predict_velocity):
+    return x + (1 - t) * predict_velocity(x, t, condition)</code></pre>
+<p>I used the prompt <span class="prompt">"a high quality photo"</span> and exactly one model call for each noisy
+input.</p>
+<p class="row-label">t = 0.25</p>
+<div class="grid c3">
+  <div><img src="images/results/p11_original.jpg" alt="Original"><div class="cap">original</div></div>
+  <div><img src="images/results/p11_noisy_t025.jpg" alt="Noisy input at t = 0.25"><div class="cap">noisy input</div></div>
+  <div><img src="images/results/p13_onestep_t025.jpg" alt="One-step estimate from t = 0.25"><div class="cap">one-step estimate</div></div>
+</div>
+<p class="row-label">t = 0.50</p>
+<div class="grid c3">
+  <div><img src="images/results/p11_original.jpg" alt="Original"><div class="cap">original</div></div>
+  <div><img src="images/results/p11_noisy_t050.jpg" alt="Noisy input at t = 0.50"><div class="cap">noisy input</div></div>
+  <div><img src="images/results/p13_onestep_t050.jpg" alt="One-step estimate from t = 0.50"><div class="cap">one-step estimate</div></div>
+</div>
+<p class="row-label">t = 0.75</p>
+<div class="grid c3">
+  <div><img src="images/results/p11_original.jpg" alt="Original"><div class="cap">original</div></div>
+  <div><img src="images/results/p11_noisy_t075.jpg" alt="Noisy input at t = 0.75"><div class="cap">noisy input</div></div>
+  <div><img src="images/results/p13_onestep_t075.jpg" alt="One-step estimate from t = 0.75"><div class="cap">one-step estimate</div></div>
+</div>
+<p>The one-step estimate is far better than any blur. At t = 0.75 it is almost identical to my photo, with the ironwork and leaves intact. At t = 0.25 it still gets the shape, colours and sky right, but the lattice and the tree are soft and smeared. With that much noise, one call can only guess the average of all the towers that could be hiding underneath, and an average of many slightly different lattices is a blur.</p>
+</section>
+
+<section class="block">
+<h3 id="a14"><span class="num">1.4</span>Visualizing velocity</h3>
+<p>In 1.3 I added <code>(1 − t)·v̂</code> to the noisy image. Here I looked at that update itself and compared it with
+the update that would recover my exact photo. Because I saved the noise, I know the true velocity
+<code>v<sub>gt</sub> = x₁ − ε</code>, so the true update is <code>(1 − t)·v<sub>gt</sub> = x₁ − x<sub>t</sub></code>.</p>
+<p>For the error map I took the RMS over the three colour channels at each pixel:</p>
+<p class="math">\[E_t = \sqrt{\operatorname{mean}_{\text{RGB}}\Big(\big[(1-t)(\hat v_t - v_{\text{gt}})\big]^2\Big)}\]</p>
+<pre><code>@torch.inference_mode()
+def velocity_diagnostics(x_t, t, clean_image, epsilon, condition, predict_velocity):
+    predicted_update = (1 - t) * predict_velocity(x_t, t, condition)
+    # v_gt = x_1 - eps, so (1 - t) * v_gt = x_1 - x_t.
+    ground_truth_update = (1 - t) * (clean_image - epsilon)
+    # RMS over the RGB axis only, so each pixel keeps its own error.
+    error_map = ((predicted_update - ground_truth_update) ** 2).mean(dim=1).sqrt()
+    return predicted_update, ground_truth_update, error_map</code></pre>
+<p>Both updates use the same symmetric colour scale with zero at mid-grey, and the error maps share the same
+<code>vmin</code>/<code>vmax</code> at all three times, so the figures can be compared directly.</p>
+<figure><img src="images/results/p11_original.jpg" alt="Original Eiffel Tower photo" style="max-width: 240px"><figcaption>original</figcaption></figure>
+<figure class="wide"><img src="images/results/p14_velocity_t025.jpg" alt="Noisy image, predicted update, true update and error at t = 0.25"></figure>
+<figure class="wide"><img src="images/results/p14_velocity_t050.jpg" alt="Noisy image, predicted update, true update and error at t = 0.50"></figure>
+<figure class="wide"><img src="images/results/p14_velocity_t075.jpg" alt="Noisy image, predicted update, true update and error at t = 0.75"></figure>
+<p>The predicted update looks almost exactly like the ground truth: a faint grey copy of the tower with the noise mixed in, i.e. "remove this noise and add this structure". The error map is dark over the flat sky and lights up on the fine ironwork, the edges of the tower and the leaves, the parts with the most detail to guess. It is much brighter at t = 0.25 than at 0.75, because (1 − t) is bigger and the model has more of the image left to work out.</p>
+</section>
+
+<section class="block">
+<h3 id="a15"><span class="num">1.5</span>Iterative denoising with Euler sampling</h3>
+<p>Instead of one big jump, I can take many small steps and ask the model for a new velocity at every step. This is
+Euler's method:</p>
+<p class="math">\[x_{t+h} = x_t + h\,v_\theta(x_t, t, c)\]</p>
+<p>I used <code>h = 0.02</code>. If the last step would go past <code>t = 1</code>, I make it shorter so it lands
+exactly on 1:</p>
+<pre><code>@torch.inference_mode()
+def euler_sample(x_start, t_start, step_size, velocity):
+    n_steps = max(1, math.ceil((1 - t_start) / step_size - 1e-6))
+    x, t = x_start, float(t_start)
+    states = [(t, x)]
+    for k in range(1, n_steps + 1):
+        # Every step is step_size long except the last, which lands exactly on 1.
+        t_next = 1.0 if k == n_steps else t_start + k * step_size
+        x = x + (t_next - t) * velocity(x, t)
+        t = t_next
+        if k % 5 == 0 or k == n_steps:
+            states.append((t, x))
+    return x, states</code></pre>
+<p>I compute each time as <code>t_start + k·h</code> instead of adding <code>h</code> over and over, so rounding
+errors don't build up. The small tolerance stops a value like 25.000000001 from turning into an extra 26th
+step. I checked this with a constant velocity: starting from 0, 0.5 and 0.93 takes exactly 50, 25 and 4 steps.</p>
+<p>Starting from the t = 0.50 input, this takes 25 steps. These are the start, every fifth step, and the end:</p>
+<div class="grid c3">
+  <div><img src="images/results/p15_t050.jpg" alt="Euler trajectory at t = 0.50"><div class="cap">t = 0.50 (start)</div></div>
+  <div><img src="images/results/p15_t060.jpg" alt="Euler trajectory at t = 0.60"><div class="cap">t = 0.60</div></div>
+  <div><img src="images/results/p15_t070.jpg" alt="Euler trajectory at t = 0.70"><div class="cap">t = 0.70</div></div>
+  <div><img src="images/results/p15_t080.jpg" alt="Euler trajectory at t = 0.80"><div class="cap">t = 0.80</div></div>
+  <div><img src="images/results/p15_t090.jpg" alt="Euler trajectory at t = 0.90"><div class="cap">t = 0.90</div></div>
+  <div><img src="images/results/p15_t100.jpg" alt="Euler result at t = 1.00"><div class="cap">t = 1.00 (final)</div></div>
+</div>
+<h4>Comparing the three methods (all from t = 0.50)</h4>
+<div class="grid c4">
+  <div><img src="images/results/p11_original.jpg" alt="Original"><div class="cap">original</div></div>
+  <div><img src="images/results/p15_cmp_blur.jpg" alt="Gaussian blur result"><div class="cap">Gaussian blur</div></div>
+  <div><img src="images/results/p15_cmp_one_step.jpg" alt="One-step result"><div class="cap">one step</div></div>
+  <div><img src="images/results/p15_cmp_euler.jpg" alt="Euler result"><div class="cap"><b>Euler, 25 steps</b></div></div>
+</div>
+<table>
+  <tr><th>method</th><th>model calls</th><th>MSE to my photo</th></tr>
+  <tr><td>Gaussian blur</td><td>0</td><td>0.0489</td></tr>
+  <tr><td>one step</td><td>1</td><td><b>0.0165</b></td></tr>
+  <tr><td>Euler</td><td>25</td><td>0.0198</td></tr>
+</table>
+<p>Euler gives the most convincing photo: the sky is smooth and the ironwork is sharp. Its MSE (0.0198) is still slightly higher than the one-step estimate's (0.0165), because over 25 steps it commits to its own fine detail, which looks real but isn't pixel-for-pixel the detail in my photo. MSE rewards safe, averaged guesses. The blur is clearly worst (0.0489), since it keeps a lot of the noise and loses the lattice.</p>
+</section>
+
+<section class="block">
+<h3 id="a16"><span class="num">1.6</span>Generating images from noise</h3>
+<p>If I start the sampler at <code>t = 0</code> from pure noise, it has to create an image from nothing. I ran 50 Euler
+steps with <span class="prompt">"a high quality photo"</span> from five different random noises (seeds 180–184).</p>
+<div class="grid c5">
+  <div><img src="images/results/p16_sample0.jpg" alt="Sample from seed 180"><div class="cap">seed 180</div></div>
+  <div><img src="images/results/p16_sample1.jpg" alt="Sample from seed 181"><div class="cap">seed 181</div></div>
+  <div><img src="images/results/p16_sample2.jpg" alt="Sample from seed 182"><div class="cap">seed 182</div></div>
+  <div><img src="images/results/p16_sample3.jpg" alt="Sample from seed 183"><div class="cap">seed 183</div></div>
+  <div><img src="images/results/p16_sample4.jpg" alt="Sample from seed 184"><div class="cap">seed 184</div></div>
+</div>
+<p>Surprisingly, all five seeds gave a portrait of a person, even though the prompt never mentions people. "A high quality photo" seems to pull the model towards the kind of photo it saw most often. Each seed gives a different face and background, but the faces without guidance are often broken: seed 180 has no face at all and seed 183 is melted. Only seeds 182 and 184 look like believable photos.</p>
+</section>
+
+<!-- ============================================================ -->
+<h2 id="a-part2"><span class="num">Part 2</span>Conditional Generation and Guidance</h2>
+
+<section class="block">
+<h3 id="a21"><span class="num">2.1</span>Classifier-free guidance</h3>
+<p>To make the prompt matter more, I used classifier-free guidance (CFG). At every step I ask the model for two
+velocities: one with the prompt (<code>v<sub>c</sub></code>) and one with an empty prompt
+(<code>v<sub>u</sub></code>). The difference between them is "what the prompt adds", and CFG pushes further in that
+direction:</p>
+<p class="math">\[v_{\text{cfg}} = v_c + w\,(v_c - v_u)\]</p>
+<pre><code>def cfg_velocity(x, t, condition, w, predict_velocity, null_condition=''):
+    if isinstance(null_condition, str):
+        null_condition = model.encode(null_condition)
+    v_c = predict_velocity(x, t, condition)
+    if w == 0:
+        # w = 0 is plain conditional prediction, so skip the unconditional pass.
+        return v_c
+    v_u = predict_velocity(x, t, null_condition)
+    return v_c + w * (v_c - v_u)</code></pre>
+<p>With <code>w = 0</code> this is exactly the normal conditional prediction from 1.6 (I checked that the two are
+identical). Below are the five samples with <code>w = 7</code>, using the <b>same five starting noises</b> as 1.6, so
+each column starts from the same noise.</p>
+<p class="row-label">without guidance (1.6)</p>
+<div class="grid c5">
+  <div><img src="images/results/p16_sample0.jpg" alt="No guidance, seed 180"><div class="cap">seed 180</div></div>
+  <div><img src="images/results/p16_sample1.jpg" alt="No guidance, seed 181"><div class="cap">seed 181</div></div>
+  <div><img src="images/results/p16_sample2.jpg" alt="No guidance, seed 182"><div class="cap">seed 182</div></div>
+  <div><img src="images/results/p16_sample3.jpg" alt="No guidance, seed 183"><div class="cap">seed 183</div></div>
+  <div><img src="images/results/p16_sample4.jpg" alt="No guidance, seed 184"><div class="cap">seed 184</div></div>
+</div>
+<p class="row-label">CFG, w = 7</p>
+<div class="grid c5">
+  <div><img src="images/results/p21_sample0.jpg" alt="CFG, seed 180"><div class="cap">seed 180</div></div>
+  <div><img src="images/results/p21_sample1.jpg" alt="CFG, seed 181"><div class="cap">seed 181</div></div>
+  <div><img src="images/results/p21_sample2.jpg" alt="CFG, seed 182"><div class="cap">seed 182</div></div>
+  <div><img src="images/results/p21_sample3.jpg" alt="CFG, seed 183"><div class="cap">seed 183</div></div>
+  <div><img src="images/results/p21_sample4.jpg" alt="CFG, seed 184"><div class="cap">seed 184</div></div>
+</div>
+<p>With w = 7 every sample is a clean, sharp studio portrait with a clear face, good lighting and no melted features. Each seed keeps the rough layout of its unguided version (seed 182 even keeps the hand by the face), so guidance mostly cleans up the result rather than replacing it. The trade-off is that the five images look much more alike: all centred head-and-shoulders shots on a plain background, with stronger contrast and saturation.</p>
+</section>
+
+<!-- ============================================================ -->
+<h2 id="a-part3"><span class="num">Part 3</span>Creative Applications</h2>
+<p>For all of Part 3 I used Euler steps of <code>h = 0.02</code>, CFG with <code>w = 7</code>, and the empty prompt
+for the unconditional branch.</p>
+
+<section class="block">
+<h3 id="a31"><span class="num">3.1</span>Image-to-image editing</h3>
+<p>This is the SDEdit idea: add some noise to a real image, then let the model denoise it. I noise the image to a
+starting time <code>t<sub>start</sub></code> and run the Euler sampler with CFG from there to 1:</p>
+<pre><code>def edit(image, noise, t_start, condition, predict_velocity, w=7, step_size=0.02):
+    x_start = interpolate(image, noise, t_start)
+    velocity = lambda x, t: cfg_velocity(x, t, condition, w, predict_velocity, null_condition)
+    result, _ = euler_sample(x_start, t_start, step_size, velocity)
+    return result</code></pre>
+<p>A small <code>t<sub>start</sub></code> means the image is almost all noise, so the model has a lot of freedom and
+invents a new image. A larger <code>t<sub>start</sub></code> keeps more of the original. I used the prompt
+<span class="prompt">"a high quality photo"</span> and the starting times 0.02, 0.04, 0.06, 0.10, 0.14, 0.25 and
+0.50.</p>
+
+<h4>The Campanile</h4>
+<div class="grid c4">
+  <div><img src="images/results/p31_campanile_original.jpg" alt="Campanile original"><div class="cap">original</div></div>
+  <div><img src="images/results/p31_campanile_t002.jpg" alt="Campanile edit from t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p31_campanile_t004.jpg" alt="Campanile edit from t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p31_campanile_t006.jpg" alt="Campanile edit from t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p31_campanile_t010.jpg" alt="Campanile edit from t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p31_campanile_t014.jpg" alt="Campanile edit from t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p31_campanile_t025.jpg" alt="Campanile edit from t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p31_campanile_t050.jpg" alt="Campanile edit from t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>Starting at 0.02 the model keeps only the blue sky and a white shape, so the tower becomes a plain white pillar. By 0.10–0.14 it is a tall, tapering stone tower with a window near the top, at 0.25 the arched windows at the top are back, and 0.50 is nearly a copy.</p>
+
+<h4>Eiffel Tower</h4>
+<div class="grid c4">
+  <div><img src="images/results/p31_my_image_1_original.jpg" alt="Eiffel Tower original"><div class="cap">original</div></div>
+  <div><img src="images/results/p31_my_image_1_t002.jpg" alt="Eiffel Tower edit from t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p31_my_image_1_t004.jpg" alt="Eiffel Tower edit from t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p31_my_image_1_t006.jpg" alt="Eiffel Tower edit from t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p31_my_image_1_t010.jpg" alt="Eiffel Tower edit from t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p31_my_image_1_t014.jpg" alt="Eiffel Tower edit from t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p31_my_image_1_t025.jpg" alt="Eiffel Tower edit from t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p31_my_image_1_t050.jpg" alt="Eiffel Tower edit from t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>At 0.02 the model keeps only the rough colours and invents something new: a hand holding a black object. At 0.04–0.06 it becomes a dark wooden tower, by 0.10–0.14 the lattice tower appears, and from 0.25 it clearly matches the original.</p>
+
+<h4>Sacré-Cœur</h4>
+<div class="grid c4">
+  <div><img src="images/results/p31_my_image_2_original.jpg" alt="Sacré-Cœur original"><div class="cap">original</div></div>
+  <div><img src="images/results/p31_my_image_2_t002.jpg" alt="Sacré-Cœur edit from t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p31_my_image_2_t004.jpg" alt="Sacré-Cœur edit from t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p31_my_image_2_t006.jpg" alt="Sacré-Cœur edit from t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p31_my_image_2_t010.jpg" alt="Sacré-Cœur edit from t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p31_my_image_2_t014.jpg" alt="Sacré-Cœur edit from t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p31_my_image_2_t025.jpg" alt="Sacré-Cœur edit from t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p31_my_image_2_t050.jpg" alt="Sacré-Cœur edit from t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>At 0.02 it turns into a blurred face, then a grey cushion-like object at 0.04–0.06 and a rocky cliff at 0.10. A domed building appears at 0.14, and from 0.25 it matches the original.</p>
+
+<h4>A web image and my own drawings</h4>
+<p>The same procedure works on things that aren't photos. Here the model has to turn a flat drawing into
+"a high quality photo", which makes it easy to see what it invents.</p>
+<p class="row-label">macaw (from the web)</p>
+<div class="grid c4">
+  <div><img src="images/results/p31_web_image_original.jpg" alt="Macaw original"><div class="cap">original</div></div>
+  <div><img src="images/results/p31_web_image_t002.jpg" alt="Macaw edit from t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p31_web_image_t004.jpg" alt="Macaw edit from t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p31_web_image_t006.jpg" alt="Macaw edit from t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p31_web_image_t010.jpg" alt="Macaw edit from t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p31_web_image_t014.jpg" alt="Macaw edit from t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p31_web_image_t025.jpg" alt="Macaw edit from t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p31_web_image_t050.jpg" alt="Macaw edit from t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>At 0.02 the macaw becomes a woman's portrait, then a pair of red and blue objects at 0.04–0.06. By 0.10 it is clearly a parrot again, though blurry, and 0.25–0.50 match the original.</p>
+<p class="row-label">my drawing of Gojo Satoru</p>
+<div class="grid c4">
+  <div><img src="images/results/p31_drawing_1_original.jpg" alt="Gojo drawing original"><div class="cap">original</div></div>
+  <div><img src="images/results/p31_drawing_1_t002.jpg" alt="Gojo drawing edit from t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p31_drawing_1_t004.jpg" alt="Gojo drawing edit from t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p31_drawing_1_t006.jpg" alt="Gojo drawing edit from t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p31_drawing_1_t010.jpg" alt="Gojo drawing edit from t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p31_drawing_1_t014.jpg" alt="Gojo drawing edit from t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p31_drawing_1_t025.jpg" alt="Gojo drawing edit from t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p31_drawing_1_t050.jpg" alt="Gojo drawing edit from t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>Because my drawings are thin pencil lines on a big white page, at low t the model mostly sees "grey paper". Gojo turns into a hand holding a round tray at 0.02, then a blank square of paper, and from 0.06 to 0.25 just empty paper; he only comes back, almost unchanged, at 0.50.</p>
+<p class="row-label">my drawing of Anya Forger</p>
+<div class="grid c4">
+  <div><img src="images/results/p31_drawing_2_original.jpg" alt="Anya drawing original"><div class="cap">original</div></div>
+  <div><img src="images/results/p31_drawing_2_t002.jpg" alt="Anya drawing edit from t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p31_drawing_2_t004.jpg" alt="Anya drawing edit from t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p31_drawing_2_t006.jpg" alt="Anya drawing edit from t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p31_drawing_2_t010.jpg" alt="Anya drawing edit from t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p31_drawing_2_t014.jpg" alt="Anya drawing edit from t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p31_drawing_2_t025.jpg" alt="Anya drawing edit from t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p31_drawing_2_t050.jpg" alt="Anya drawing edit from t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>Anya is more fun: she becomes a white plate, then at 0.10–0.14 her black cat-ear hair clips turn into little metal pieces and holes poked in the paper, and at 0.25 a rough sketch of a cat-eared head appears before the full drawing at 0.50. The dark, solid clips are the only parts strong enough to survive the noise.</p>
+</section>
+
+<section class="block">
+<h3 id="a32"><span class="num">3.2</span>Text-guided editing</h3>
+<p>Here I ran the same sweep, but swapped the generic prompt for one describing the edit I wanted. Now a small
+<code>t<sub>start</sub></code> gives an image that follows my prompt, and a larger one keeps more of the original
+shape, so somewhere in the middle the image becomes a mix of both.</p>
+
+<h4>The Campanile → <span class="prompt">"a photograph of a rocket on a launch pad"</span></h4>
+<div class="grid c4">
+  <div><img src="images/results/p31_campanile_original.jpg" alt="Campanile original"><div class="cap">original</div></div>
+  <div><img src="images/results/p32_campanile_t002.jpg" alt="Campanile to rocket, t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p32_campanile_t004.jpg" alt="Campanile to rocket, t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p32_campanile_t006.jpg" alt="Campanile to rocket, t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p32_campanile_t010.jpg" alt="Campanile to rocket, t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p32_campanile_t014.jpg" alt="Campanile to rocket, t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p32_campanile_t025.jpg" alt="Campanile to rocket, t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p32_campanile_t050.jpg" alt="Campanile to rocket, t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>Starting between 0.06 and 0.14 works best: a white rocket in the tower's exact position, with a launch gantry where the trees were.</p>
+
+<h4>Eiffel Tower → <span class="prompt">"a photograph of a lighthouse on a rocky coast at sunset"</span></h4>
+<div class="grid c4">
+  <div><img src="images/results/p31_my_image_1_original.jpg" alt="Eiffel Tower original"><div class="cap">original</div></div>
+  <div><img src="images/results/p32_my_image_1_t002.jpg" alt="Eiffel Tower to lighthouse, t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p32_my_image_1_t004.jpg" alt="Eiffel Tower to lighthouse, t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p32_my_image_1_t006.jpg" alt="Eiffel Tower to lighthouse, t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p32_my_image_1_t010.jpg" alt="Eiffel Tower to lighthouse, t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p32_my_image_1_t014.jpg" alt="Eiffel Tower to lighthouse, t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p32_my_image_1_t025.jpg" alt="Eiffel Tower to lighthouse, t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p32_my_image_1_t050.jpg" alt="Eiffel Tower to lighthouse, t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>Starting between 0.10 and 0.14 works best: a lighthouse shaped like the tower's legs, with the same tree in the corner.</p>
+
+<h4>Sacré-Cœur → <span class="prompt">"a photograph of a snowy castle in winter"</span></h4>
+<div class="grid c4">
+  <div><img src="images/results/p31_my_image_2_original.jpg" alt="Sacré-Cœur original"><div class="cap">original</div></div>
+  <div><img src="images/results/p32_my_image_2_t002.jpg" alt="Sacré-Cœur to snowy castle, t = 0.02"><div class="cap">t = 0.02</div></div>
+  <div><img src="images/results/p32_my_image_2_t004.jpg" alt="Sacré-Cœur to snowy castle, t = 0.04"><div class="cap">t = 0.04</div></div>
+  <div><img src="images/results/p32_my_image_2_t006.jpg" alt="Sacré-Cœur to snowy castle, t = 0.06"><div class="cap">t = 0.06</div></div>
+  <div><img src="images/results/p32_my_image_2_t010.jpg" alt="Sacré-Cœur to snowy castle, t = 0.10"><div class="cap">t = 0.10</div></div>
+  <div><img src="images/results/p32_my_image_2_t014.jpg" alt="Sacré-Cœur to snowy castle, t = 0.14"><div class="cap">t = 0.14</div></div>
+  <div><img src="images/results/p32_my_image_2_t025.jpg" alt="Sacré-Cœur to snowy castle, t = 0.25"><div class="cap">t = 0.25</div></div>
+  <div><img src="images/results/p32_my_image_2_t050.jpg" alt="Sacré-Cœur to snowy castle, t = 0.50"><div class="cap">t = 0.50</div></div>
+</div>
+<p>Starting between 0.10 and 0.14 gives a snowy castle with the same grey sky and framing, and at 0.25 the dome itself gets snow and red roofs. For all three, starting earlier than this ignores my photo, and starting after 0.25 ignores the prompt.</p>
+</section>
+
+<section class="block">
+<h3 id="a33"><span class="num">3.3</span>Visual anagrams</h3>
+<p>A visual anagram is an image that shows one thing upright and something else when turned upside down. At every
+Euler step I compute two CFG velocities: one for prompt <code>a</code> on the image as it is, and one for prompt
+<code>b</code> on the image rotated 180°. I rotate the second one back and average the two:</p>
+<p class="math">\[v = \tfrac{1}{2}\Big(v_{\text{cfg}}(x, t, c_a) + F\big(v_{\text{cfg}}(F(x), t, c_b)\big)\Big)\]</p>
+<p>where <code>F</code> rotates by 180° (it flips both the rows and the columns, not just a vertical mirror). Since the
+final image has to satisfy both velocities at once, it looks like prompt <code>a</code> one way up and prompt
+<code>b</code> the other way up.</p>
+<pre><code>def visual_anagrams(noise, condition_a, condition_b, predict_velocity, w=7, step_size=0.02):
+    def velocity(x, t):
+        # Upright view follows prompt a; the rotated view follows prompt b.
+        v_a = cfg_velocity(x, t, condition_a, w, predict_velocity, null_condition)
+        v_b = rotate180(cfg_velocity(rotate180(x), t, condition_b, w, predict_velocity, null_condition))
+        return (v_a + v_b) / 2
+    result, _ = euler_sample(noise, 0, step_size, velocity)
+    return result</code></pre>
+<div class="grid">
+  <div><img src="images/results/p33_island_cat.jpg" alt="Anagram upright: a floating island with a castle"><div class="cap">upright: <span class="prompt">"an anime-style painting of a floating island with a castle"</span></div></div>
+  <div><img src="images/results/p33_island_cat_flipped.jpg" alt="Anagram rotated 180 degrees: a sleeping cat"><div class="cap">rotated: <span class="prompt">"an anime-style painting of a sleeping cat"</span></div></div>
+</div>
+<div class="grid">
+  <div><img src="images/results/p33_balloon_owl.jpg" alt="Anagram upright: a stained glass hot air balloon"><div class="cap">upright: <span class="prompt">"a stained glass window of a hot air balloon"</span></div></div>
+  <div><img src="images/results/p33_balloon_owl_flipped.jpg" alt="Anagram rotated 180 degrees: a stained glass owl"><div class="cap">rotated: <span class="prompt">"a stained glass window of an owl"</span></div></div>
+</div>
+<p>Both illusions work. Upright, the first is a small island with a castle floating above the clouds; flipped, the island's rocky underside becomes the cat's striped face and its two hanging rocks become the ears, with the clouds as the cat's white body. The stained glass one works even better: the balloon's basket and ropes turn into the owl's eyes and beak, and the balloon itself becomes its round body. Stained glass helps a lot, because the thick black lead lines hide the places where the two pictures don't quite line up. I ran two seeds for each pair and kept the better one.</p>
+</section>
+
+<section class="block">
+<h3 id="a34"><span class="num">3.4</span>Hybrid images</h3>
+<p>This is the same idea as the hybrid images in Project 2, but done during generation. Up close we see the high
+frequencies, and from far away only the low frequencies. At every step I take the <b>low-pass</b> part of the
+velocity for prompt <code>a</code> and the <b>high-pass</b> part for prompt <code>b</code>:</p>
+<p class="math">\[v = \operatorname{lowpass}(v_a) + \big(v_b - \operatorname{lowpass}(v_b)\big)\]</p>
+<p>The low-pass filter is a Gaussian blur with σ = 16 (kernel size 265 at 512×512).</p>
+<pre><code>def make_hybrids(noise, condition_a, condition_b, predict_velocity, w=7, step_size=0.02):
+    def velocity(x, t):
+        # Low frequencies from prompt a (seen from far), high frequencies from prompt b (up close).
+        v_a = cfg_velocity(x, t, condition_a, w, predict_velocity, null_condition)
+        v_b = cfg_velocity(x, t, condition_b, w, predict_velocity, null_condition)
+        return lowpass(v_a) + v_b - lowpass(v_b)
+    result, _ = euler_sample(noise, 0, step_size, velocity)
+    return result</code></pre>
+<p>Each result is shown at full size (close up) and at 64×64 (as if seen from far away).</p>
+<div class="grid" style="grid-template-columns: 3fr 1fr; align-items: center">
+  <div><img src="images/results/p34_fuji_koi.jpg" alt="Hybrid image, full size"><div class="cap">close: <span class="prompt">"an ukiyo-e print of a koi pond with lotus flowers"</span></div></div>
+  <div class="hybrid-small"><img src="images/results/p34_fuji_koi_small.png" alt="Hybrid image at 64 by 64"><div class="cap">far: <span class="prompt">"an ukiyo-e print of Mount Fuji"</span></div></div>
+</div>
+<div class="grid" style="grid-template-columns: 3fr 1fr; align-items: center">
+  <div><img src="images/results/p34_face_blossom.jpg" alt="Hybrid image, full size"><div class="cap">close: <span class="prompt">"an ink drawing of a cherry blossom garden"</span></div></div>
+  <div class="hybrid-small"><img src="images/results/p34_face_blossom_small.png" alt="Hybrid image at 64 by 64"><div class="cap">far: <span class="prompt">"an ink drawing of an anime girl's face"</span></div></div>
+</div>
+<p>Up close both prompts come through clearly: a koi pond with lotus flowers in an ukiyo-e style, and an ink drawing of cherry trees. From far away the effect is much weaker than in the anagrams. In the first one, the pale dome rising above the pond gives the rounded outline of a mountain, but it doesn't look much like Fuji. In the second, the two trunks and the arch of blossoms frame an empty oval, like hair around a face, but no features appear. The low frequencies only control the rough layout, and the close-up prompts were happy to fill that layout with sky or blank paper. Compared with making hybrids by hand in Project 2, I didn't need to align two photos or tune any cutoffs, but I had less control over how strongly the far-away image shows.</p>
+</section>
+
+<!-- ============================================================ -->
+<div class="part-banner" id="part-b">
+  <div class="kicker">Part B</div>
+  <div class="title">Flow Matching from Scratch</div>
+</div>
+
+<h2 id="b-intro">Setup</h2>
+<p>In Part A the model was already trained. In Part B I built and trained my own models on <b>MNIST</b>, the dataset
+of 28×28 handwritten digits, with pixel values in [0, 1]. First I trained a UNet that removes noise in one step. Then
+I turned it into a flow-matching model that generates digits from pure noise, the same way the big model in Part A
+does.</p>
+<p>Every model below is trained on the 60,000 training images, and every test figure uses the same first ten test
+digits (7 2 1 0 4 1 4 9 5 9) so the figures can be compared directly.</p>
+
+<!-- ============================================================ -->
+<h2 id="b-part1"><span class="num">Part 1</span>Training a Single-Step Denoising UNet</h2>
+
+<section class="block">
+<h3 id="b11"><span class="num">1.1</span>Implementing the UNet</h3>
+<p>A UNet first shrinks the image step by step to understand its overall shape, then grows it back to full size.
+Along the way, <b>skip connections</b> copy the features from each level of the shrinking half straight across to
+the growing half, so fine details like stroke edges aren't lost at the bottom.</p>
+<p>All the building blocks are a convolution followed by BatchNorm and GELU:</p>
+<table class="arch">
+  <tr><th>block</th><th>layer</th><th>what it does</th></tr>
+  <tr><td><code>Conv</code></td><td>Conv2d(3, stride 1, pad 1)</td><td>changes channels, same size</td></tr>
+  <tr><td><code>DownConv</code></td><td>Conv2d(3, stride 2, pad 1)</td><td>halves the size: 28 → 14 → 7</td></tr>
+  <tr><td><code>UpConv</code></td><td>ConvTranspose2d(4, stride 2, pad 1)</td><td>doubles the size: 7 → 14 → 28</td></tr>
+  <tr><td><code>Flatten</code></td><td>AvgPool2d(7)</td><td>7×7 → 1×1</td></tr>
+  <tr><td><code>Unflatten</code></td><td>ConvTranspose2d(7, stride 7)</td><td>1×1 → 7×7</td></tr>
+  <tr><td><code>ConvBlock</code></td><td>Conv → Conv</td><td>a deeper "Conv"</td></tr>
+  <tr><td><code>DownBlock</code> / <code>UpBlock</code></td><td>DownConv / UpConv → ConvBlock</td><td>resize, then refine</td></tr>
+</table>
+<p>With <code>D</code> hidden channels, the image goes
+1×28×28 → D×28×28 → D×14×14 → 2D×7×7 → 2D×1×1 and back up. At each level the decoder's features are concatenated
+with the encoder's (doubling the channels), and a final 3×3 convolution maps back to one channel.</p>
+<details>
+<summary>Code: the UNet</summary>
+<pre><code>class UnconditionalUNet(nn.Module):
+    def __init__(self, in_channels, num_hiddens):
+        super().__init__()
+        D = num_hiddens
+        self.in_block = ConvBlock(in_channels, D)    # D x 28 x 28
+        self.down1 = DownBlock(D, D)                 # D x 14 x 14
+        self.down2 = DownBlock(D, 2 * D)             # 2D x 7 x 7
+        self.flatten = Flatten()                     # 2D x 1 x 1
+        self.unflatten = Unflatten(2 * D)            # 2D x 7 x 7
+        self.up1 = UpBlock(4 * D, D)                 # concat(2D, 2D) -> D x 14 x 14
+        self.up2 = UpBlock(2 * D, D)                 # concat(D, D) -> D x 28 x 28
+        self.out_block = ConvBlock(2 * D, D)         # concat(D, D) -> D x 28 x 28
+        self.head = nn.Conv2d(D, in_channels, 3, 1, 1)
+
+    def forward(self, x):
+        x0 = self.in_block(x)
+        x1 = self.down1(x0)
+        x2 = self.down2(x1)
+        h = self.unflatten(self.flatten(x2))
+        # skip connections: concatenate the matching encoder features along channels
+        h = self.up1(torch.cat([x2, h], dim=1))
+        h = self.up2(torch.cat([x1, h], dim=1))
+        h = self.out_block(torch.cat([x0, h], dim=1))
+        return self.head(h)</code></pre>
+</details>
+</section>
+
+<section class="block">
+<h3 id="b12"><span class="num">1.2</span>Using the UNet to train a denoiser</h3>
+<p>The denoiser gets a noisy digit <code>z</code> and has to output the clean digit <code>x</code>. The noise is
+Gaussian with strength σ, and the loss is the mean squared error:</p>
+<p class="math">\[z = x + \sigma\epsilon, \quad \epsilon \sim \mathcal{N}(0, I) \qquad\qquad L = \mathbb{E}\,\lVert D_\theta(z) - x\rVert^2\]</p>
+<p>This is what that noise looks like for σ = 0, 0.2, 0.4, 0.5, 0.6, 0.8 and 1.0 (one row each):</p>
+<figure><img src="images/results/b12_noise_levels.png" alt="Ten test digits with increasing amounts of noise, one row per sigma"></figure>
+<p>The digits are easy to read up to σ = 0.5, still guessable at 0.6, and by 0.8–1.0 most of them disappear into the noise.</p>
+
+<h3 id="b121"><span class="num">1.2.1</span>Training</h3>
+<p>I trained with σ = 0.5, <code>D = 128</code>, batch size 256 and Adam with a learning rate of 1e-4 for 5 epochs.
+The noise is drawn fresh every time a batch is loaded, so the model never sees the same noisy image twice and
+can't just memorise them.</p>
+<figure><img src="images/results/b121_loss.png" alt="Training loss of the denoiser"><figcaption>training loss for every optimizer step (light) and its running average</figcaption></figure>
+<p>Test digits after the first and the last epoch (rows: clean, noisy input, denoised output):</p>
+<figure><img src="images/results/b121_epoch1.png" alt="Denoising results after epoch 1"><figcaption>after epoch 1</figcaption></figure>
+<figure><img src="images/results/b121_epoch5.png" alt="Denoising results after epoch 5"><figcaption>after epoch 5</figcaption></figure>
+<p>After one epoch the denoiser already recovers every digit, but the strokes are a bit fuzzy and there are faint grey specks in the background (look at the 1 and the 5). By epoch 5 the background is clean black and the strokes are smooth. The final training loss is 0.0082, and the curve drops almost entirely in the first 50 steps.</p>
+
+<h3 id="b122"><span class="num">1.2.2</span>Out-of-distribution testing</h3>
+<p>The denoiser was only trained on σ = 0.5. Here I gave it the same test digits at other noise levels it never
+saw during training.</p>
+<div class="grid">
+  <div><img src="images/results/b122_ood_noisy.png" alt="Noisy inputs at every sigma"><div class="cap">input (σ = 0 → 1.0, top to bottom)</div></div>
+  <div><img src="images/results/b122_ood_denoised.png" alt="Denoised outputs at every sigma"><div class="cap">denoised</div></div>
+</div>
+<p>At σ = 0 the model leaves a clean digit essentially unchanged, and from 0.2 to 0.5 it produces clean digits. Above the training level it starts to fail: at 0.6 the 1 grows a crossbar, at 0.8 the 1 turns into a 7 and the 4 and 5 get scribbles, and at 1.0 most outputs are messy blotches with extra strokes. It removes the amount of noise it was trained on, and anything left over gets turned into fake strokes.</p>
+
+<h3 id="b123"><span class="num">1.2.3</span>Denoising pure noise</h3>
+<p>To get a model that <i>generates</i> digits, I tried the simplest thing: train the same UNet with pure noise
+<code>z = ε</code> as the input and a clean digit as the target, with the same settings as before (5 epochs).</p>
+<figure><img src="images/results/b123_loss.png" alt="Training loss with pure-noise inputs"><figcaption>training loss</figcaption></figure>
+<figure><img src="images/results/b123_epoch1.png" alt="Outputs for pure noise after epoch 1"><figcaption>after epoch 1 (top: noise input, bottom: output)</figcaption></figure>
+<figure><img src="images/results/b123_epoch5.png" alt="Outputs for pure noise after epoch 5"><figcaption>after epoch 5</figcaption></figure>
+<figure><img src="images/results/b123_mean.png" alt="Average of all MNIST training digits" style="max-width: 360px"><figcaption>the average of all 60,000 training digits</figcaption></figure>
+<p>This doesn't work as a generator. The input noise has nothing to do with which digit is the target, so the best
+the model can do under an MSE loss is to output the image that is closest <i>on average</i> to all training
+digits, which is their mean (the centroid):</p>
+<p class="math">\[\arg\min_{y}\; \mathbb{E}_x \lVert y - x\rVert^2 = \mathbb{E}[x]\]</p>
+<p>So whatever noise goes in, the output is roughly the same blurry blob: every digit stacked on top of each other.</p>
+<p>This is exactly what happened. All ten outputs at epoch 5 are the same grey blob, and it matches the mean of the training digits (something between a 0, a 3 and an 8). The loss drops in the first 50 steps and then flattens at about 0.067, around eight times the denoiser's, because nothing the model does can reduce it further.</p>
+</section>
+
+<!-- ============================================================ -->
+<h2 id="b-part2"><span class="num">Part 2</span>Training a Flow Matching Model</h2>
+<p>One step from pure noise can only produce the average. Flow matching fixes this by taking many small steps
+instead, exactly like the Euler sampling in Part A. I used the same convention as Part A, with <code>t = 0</code> as
+noise and <code>t = 1</code> as a clean digit:</p>
+<p class="math">\[x_t = (1-t)\,x_0 + t\,x_1, \qquad x_0 \sim \mathcal{N}(0, I)\]</p>
+<p>The UNet now predicts the flow <code>u = x₁ − x₀</code> (the direction from noise to the digit) rather than the
+digit itself:</p>
+<p class="math">\[L = \mathbb{E}\,\big\lVert (x_1 - x_0) - u_\theta(x_t, t)\big\rVert^2\]</p>
+
+<section class="block">
+<h3 id="b21"><span class="num">2.1</span>Adding time conditioning to the UNet</h3>
+<p>The network needs to know how noisy its input is, so I feed it <code>t</code>. Each <code>FCBlock</code>
+(Linear → GELU → Linear) turns the single number <code>t</code> into one value per channel. It then scales the
+features at the bottom of the UNet (2D channels) and after the first up-block (D channels):</p>
+<pre><code>t1 = self.fc1_t(t)[:, :, None, None]   # (N, 2D, 1, 1)
+t2 = self.fc2_t(t)[:, :, None, None]   # (N, D, 1, 1)
+...
+h = self.unflatten(self.flatten(x2)) * t1
+h = self.up1(torch.cat([x2, h], dim=1)) * t2</code></pre>
+<details>
+<summary>Code: training step and sampler (Algorithms 1 and 2)</summary>
+<pre><code>def time_fm_forward(unet, x_1, num_ts):
+    unet.train()
+    x_0 = torch.randn_like(x_1)
+    t = torch.rand(x_1.shape[0], device=x_1.device)   # t ~ U[0, 1], one per image
+    t_ = t.view(-1, 1, 1, 1)
+    x_t = (1 - t_) * x_0 + t_ * x_1
+    # the UNet predicts the flow x_1 - x_0, not the clean image
+    return F.mse_loss(unet(x_t, t), x_1 - x_0)
+
+@torch.inference_mode()
+def time_fm_sample(unet, img_wh, num_ts, seed=0, num_samples=40):
+    unet.eval()
+    dev = next(unet.parameters()).device
+    x = torch.randn((num_samples, 1, *img_wh), generator=torch.Generator().manual_seed(seed)).to(dev)
+    for i in range(num_ts):
+        t = torch.full((num_samples,), i / num_ts, device=dev)
+        x = x + unet(x, t) / num_ts
+    return x</code></pre>
+</details>
+
+<h3 id="b22"><span class="num">2.2</span>Training the time-conditioned UNet</h3>
+<p>I trained with <code>D = 64</code>, batch size 64, and Adam starting at a learning rate of 1e-2 that decays
+exponentially (γ = 0.1<sup>1/10</sup> per epoch, so after 10 epochs it has dropped to 1e-3).</p>
+<figure><img src="images/results/b22_loss.png" alt="Training loss of the time-conditioned UNet"><figcaption>training loss over all 10 epochs</figcaption></figure>
+<p>The loss starts at about 2, falls quickly, and ends at 0.093. That is much higher than the denoiser's 0.008: here the model has to predict the whole flow at any t, including t near 0 where the input is almost pure noise, which is much harder than removing a fixed amount of noise. It also stays jumpy, because every batch gets random new t values.</p>
+
+<h3 id="b23"><span class="num">2.3</span>Sampling from the time-conditioned UNet</h3>
+<p>Starting from pure noise, I took 50 Euler steps of size 1/50 along the predicted flow. These are the same 40
+starting noises after 1, 5 and 10 epochs of training:</p>
+<figure><img src="images/results/b23_epoch1.png" alt="Time-conditioned samples after epoch 1"><figcaption>after epoch 1</figcaption></figure>
+<figure><img src="images/results/b23_epoch5.png" alt="Time-conditioned samples after epoch 5"><figcaption>after epoch 5</figcaption></figure>
+<figure><img src="images/results/b23_epoch10.png" alt="Time-conditioned samples after epoch 10"><figcaption>after epoch 10</figcaption></figure>
+<p>After epoch 1 the samples are just squiggles. By epoch 10 roughly 30 of the 40 look like real digits (several 0s, 2s, 8s and a clear 7, 5 and 1). The rest are the typical failures: a stroke that breaks off (bottom row, fourth), a 4 and a 9 merged together, or shapes halfway between two digits.</p>
+</section>
+
+<section class="block">
+<h3 id="b24"><span class="num">2.4</span>Adding class conditioning</h3>
+<p>To choose which digit gets generated, I also give the UNet the class <code>c</code> as a one-hot vector. Two more
+FCBlocks turn it into per-channel values. The class <b>scales</b> the features and the time <b>shifts</b> them:</p>
+<pre><code>c = F.one_hot(c.long(), self.num_classes).float()
+if mask is not None:
+    c = c * mask.float().view(-1, 1)   # a zero vector means "no class"
+...
+h = c1 * self.unflatten(self.flatten(x2)) + t1
+h = c2 * self.up1(torch.cat([x2, h], dim=1)) + t2</code></pre>
+<p>During training I replace the class with the zero vector 10% of the time (<code>p_uncond = 0.1</code>). That way
+the same network also learns to generate <i>without</i> a class, which is needed for classifier-free guidance.</p>
+
+<h3 id="b25"><span class="num">2.5</span>Training the class-conditioned UNet</h3>
+<p>Same settings as 2.2 (10 epochs, D = 64, batch 64, Adam 1e-2 with exponential decay), plus the class labels and
+the 10% class dropout.</p>
+<figure><img src="images/results/b25_loss.png" alt="Training loss of the class-conditioned UNet"><figcaption>training loss over all 10 epochs</figcaption></figure>
+<p>The final loss is 0.083, a bit lower than the time-only model's 0.093. Knowing the digit removes some of the guessing about which shape to move towards.</p>
+
+<h3 id="b26"><span class="num">2.6</span>Sampling from the class-conditioned UNet</h3>
+<p>For sampling I used classifier-free guidance with γ = 5 and 300 Euler steps. Note that Part B writes CFG
+starting from the unconditional flow:</p>
+<p class="math">\[u = u_{\text{uncond}} + \gamma\,(u_{\text{cond}} - u_{\text{uncond}})\]</p>
+<details>
+<summary>Code: class-conditioned sampler (Algorithm 4)</summary>
+<pre><code>@torch.inference_mode()
+def class_fm_sample(unet, c, img_wh, num_ts, guidance_scale=5.0, seed=0):
+    unet.eval()
+    dev = next(unet.parameters()).device
+    c = c.to(dev)
+    no_class = torch.zeros(len(c), device=dev)
+    x = torch.randn((len(c), 1, *img_wh), generator=torch.Generator().manual_seed(seed)).to(dev)
+    caches = [x]
+    for i in range(num_ts):
+        t = torch.full((len(c),), i / num_ts, device=dev)
+        u_uncond = unet(x, c, t, mask=no_class)
+        u_cond = unet(x, c, t)
+        u = u_uncond + guidance_scale * (u_cond - u_uncond)   # classifier-free guidance
+        x = x + u / num_ts
+        if (i + 1) % 10 == 0:
+            caches.append(x)   # every 10th step, for the animation
+    return x, torch.stack(caches, dim=1)</code></pre>
+</details>
+<p>Each grid has four of every digit, with one row of 0–9 per line:</p>
+<figure><img src="images/results/b26_epoch1.png" alt="Class-conditioned samples after epoch 1"><figcaption>after epoch 1</figcaption></figure>
+<figure><img src="images/results/b26_epoch5.png" alt="Class-conditioned samples after epoch 5"><figcaption>after epoch 5</figcaption></figure>
+<figure><img src="images/results/b26_epoch10.png" alt="Class-conditioned samples after epoch 10"><figcaption>after epoch 10</figcaption></figure>
+<figure><img src="images/results/b26_sampling.gif" alt="Animation of noise turning into digits over 300 steps"><figcaption>the final model turning noise into digits (every 10th of the 300 steps)</figcaption></figure>
+<p>This is a huge improvement over 2.3. Even after one epoch every sample is the requested digit, with only a few odd ones (the first 5 and 8). By epoch 10 all 40 are the correct, clearly readable digit, and the four of each class still look different from each other: slanted or upright 1s, open or closed 4s.</p>
+
+<h4>Getting rid of the learning-rate scheduler</h4>
+<p>The exponential scheduler slowly lowers the learning rate from 1e-2 to 1e-3. Without it, a constant 1e-2 would
+keep taking big, jumpy steps right to the end. To make up for that, I trained a fresh model with a
+<b>constant learning rate of 1e-3</b>, the value the scheduler ends at, and kept everything else the same.</p>
+<figure><img src="images/results/b26_no_scheduler_loss.png" alt="Training loss without the scheduler"><figcaption>training loss, constant learning rate 1e-3</figcaption></figure>
+<figure><img src="images/results/b26_no_scheduler_epoch1.png" alt="No-scheduler samples after epoch 1"><figcaption>no scheduler, after epoch 1</figcaption></figure>
+<figure><img src="images/results/b26_no_scheduler_epoch5.png" alt="No-scheduler samples after epoch 5"><figcaption>no scheduler, after epoch 5</figcaption></figure>
+<figure><img src="images/results/b26_no_scheduler_epoch10.png" alt="No-scheduler samples after epoch 10"><figcaption>no scheduler, after epoch 10</figcaption></figure>
+<p>Without the scheduler the results are just as good: by epoch 10 all 40 samples are the right digit and look as clean as the scheduled model's, and its final loss is almost the same (0.0842 against 0.0832). Even at epoch 1 it was no worse, so for this small model a constant learning rate of 1e-3 is a perfectly good replacement.</p>
+</section>
+
+<!-- ============================================================ -->
+<h2 id="learned">What I learned</h2>
+<p>The biggest thing I learned is how much comes from one simple idea: start from noise and follow a predicted velocity towards an image. Changing where I start gives denoising (start at t near 1), editing (start in the middle) or generation (start at 0), and mixing velocities gives guidance, visual anagrams and hybrids, all with the same model and no retraining. Building it from scratch in Part B showed why each piece matters. A denoiser alone can only produce the average digit, adding time turns it into a generator, and adding the class with guidance makes the generator reliable. It was also fun to see how the model treats my drawings: to it they are mostly white paper.</p>
+
+</main>
+</div>
+
+<script src="../assets/blog.js"></script>
+</body>
+</html>
