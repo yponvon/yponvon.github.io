@@ -1,0 +1,8 @@
+pair, points, fit error (px), held out error n-1 points (px), held out error 4 points (px)
+anthro_left_mid, 8, 3.08, 9.72, 225.97
+anthro_right_mid, 8, 4.25, 9.60, 13.32
+sunshade_left_right, 10, 1.33, 1.86, 129.23
+terrace_1_2, 10, 1.87, 3.26, 7.96
+terrace_2_3, 10, 3.67, 6.22, 31.93
+terrace_4_3, 10, 3.90, 6.54, 97.42
+terrace_5_4, 9, 2.59, 4.33, 11.41

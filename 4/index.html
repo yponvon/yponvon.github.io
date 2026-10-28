@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image Warping and Mosaicing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/blog.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters: [{left: '\\[', right: '\\]', display: true}]})"></script>
+<style>
+  .c5 { --cols: 5; }
+  @media (max-width: 640px) { .c5 { --cols: 2; } }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <div class="label">Contents</div>
+  <a href="#a1">A.1 Shooting the photos</a>
+  <a href="#a2">A.2 Recovering homographies</a>
+  <a class="sub" href="#a2-points">How many points?</a>
+  <a href="#a3">A.3 Warping and rectification</a>
+  <a class="sub" href="#a3-interp">Nearest vs bilinear</a>
+  <a href="#a4">A.4 Mosaics</a>
+  <a class="sub" href="#m-anthro">Anthropology building</a>
+  <a class="sub" href="#m-sunshade">Sunshade building</a>
+  <a class="sub" href="#m-terrace">Chuk Wong Terrace</a>
+  <a href="#learned">What I learned</a>
+</nav>
+
+<main>
+<a class="back" href="../index.html">&larr; all projects</a>
+
+<header class="hero">
+  <div class="kicker">CS180 · Project 4A</div>
+  <h1>Image Warping and Mosaicing</h1>
+</header>
+
+<p>I recovered homographies between photos and used them to rectify flat objects and stitch photos into
+panoramas.</p>
+
+<!-- ============================================================ -->
+<section class="block">
+<h2 id="a1"><span class="num">A.1</span>Shooting the photos</h2>
+<p>A homography only works if the scene is flat or the camera only rotates, so for each mosaic I stood in one
+spot and turned my phone between shots, with about half of each photo overlapping the next.</p>
+<div class="grid c3">
+  <div><img src="images/results/a4_anthro_src1.jpg" alt="Anthropology building, left"><div class="cap">Anthropology &amp; Art Practice, 3 photos</div></div>
+  <div><img src="images/results/a4_sunshade_src1.jpg" alt="Concrete building with sunshades, left"><div class="cap">concrete building with sunshades, 2 photos</div></div>
+  <div><img src="images/results/a4_terrace_src3.jpg" alt="Chuk Wong Terrace, middle photo"><div class="cap">Chuk Wong Terrace, 5 photos</div></div>
+</div>
+<p>For rectification I took a campus map sign and a hand cream box on my shelf, both at an angle.</p>
+</section>
+
+<!-- ============================================================ -->
+<section class="block">
+<h2 id="a2"><span class="num">A.2</span>Recovering homographies</h2>
+<p><i>H</i> is a 3×3 matrix mapping (x, y) in one photo to (x', y') in the other. It's only defined up to scale,
+so I fixed the bottom right entry to 1, leaving 8 unknowns:</p>
+<p class="math">\[\begin{bmatrix} wx' \\ wy' \\ w \end{bmatrix} = \begin{bmatrix} a & b & c \\ d & e & f \\ g & h & 1 \end{bmatrix} \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}
+\quad\Rightarrow\quad x' = \frac{ax + by + c}{gx + hy + 1}, \quad y' = \frac{dx + ey + f}{gx + hy + 1}\]</p>
+<p>Multiplying out the denominators gives two linear equations per point pair:</p>
+<p class="math">\[\begin{bmatrix} x & y & 1 & 0 & 0 & 0 & -xx' & -yx' \\ 0 & 0 & 0 & x & y & 1 & -xy' & -yy' \end{bmatrix}
+\begin{bmatrix} a \\ b \\ c \\ d \\ e \\ f \\ g \\ h \end{bmatrix} = \begin{bmatrix} x' \\ y' \end{bmatrix}\]</p>
+<p>4 points give exactly 8 equations, but then any clicking error goes straight into <i>H</i>, so I used 8 to 10
+points and solved with least squares.</p>
+<details open>
+<summary>Code: computeH</summary>
+<pre><code>def system(im1_pts, im2_pts):
+    # h = [a b c d e f g h], last entry of H fixed to 1
+    # x' = (ax + by + c) / (gx + hy + 1)  ->  ax + by + c - gxx' - hyx' = x'
+    A, b = [], []
+    for (x, y), (xp, yp) in zip(im1_pts, im2_pts):
+        A.append([x, y, 1, 0, 0, 0, -x * xp, -y * xp])
+        A.append([0, 0, 0, x, y, 1, -x * yp, -y * yp])
+        b.append(xp)
+        b.append(yp)
+    return np.array(A, float), np.array(b, float)
+
+def computeH(im1_pts, im2_pts):
+    # least squares, so more than 4 points averages out clicking error
+    A, b = system(im1_pts, im2_pts)
+    h = np.linalg.lstsq(A, b, rcond=None)[0]
+    return np.append(h, 1).reshape(3, 3)</code></pre>
+</details>
+
+<p>I picked correspondences with a small matplotlib tool (<code>pick_points.py</code>). For some pairs I placed
+rough matches and snapped each one to the exact matching pixel by comparing small patches around it.</p>
+<figure class="wide">
+  <img src="images/results/a2_terrace_1_2_points.jpg" alt="Ten corresponding points on terrace photos 1 and 2">
+  <figcaption>terrace 1 → 2. Cyan circles are the left points sent through <i>H</i></figcaption>
+</figure>
+<p>Recovered homography (20 equations, 8 unknowns):</p>
+<pre><code>H = [[  1.2776   -0.0731  -216.9663]
+     [  0.1954    1.1595  -125.8912]
+     [  0.0002    0.0000     1.0000]]</code></pre>
+<p>Average error after fitting: <b>1.9 px</b>.</p>
+<figure class="wide">
+  <img src="images/results/a2_anthro_left_mid_points.jpg" alt="Hand clicked points on the Anthropology building">
+  <figcaption>Anthropology left → middle: 8 points, 3.1 px average error</figcaption>
+</figure>
+
+<h3 id="a2-points">How many points do you need?</h3>
+<p>I hid one point at a time, fit <i>H</i> on the rest (or only 4 of them), and measured how far off the hidden
+point landed (median):</p>
+<table>
+  <tr><th>pair</th><th>points</th><th>fit error</th><th>hidden point, all others</th><th>hidden point, only 4</th></tr>
+  <tr><td>anthro left → mid</td><td>8</td><td>3.1 px</td><td>9.7 px</td><td>226 px</td></tr>
+  <tr><td>anthro right → mid</td><td>8</td><td>4.3 px</td><td>9.6 px</td><td>13.3 px</td></tr>
+  <tr><td>sunshade left → right</td><td>10</td><td>1.3 px</td><td>1.9 px</td><td>129 px</td></tr>
+  <tr><td>terrace 1 → 2</td><td>10</td><td>1.9 px</td><td>3.3 px</td><td>8.0 px</td></tr>
+  <tr><td>terrace 2 → 3</td><td>10</td><td>3.7 px</td><td>6.2 px</td><td>31.9 px</td></tr>
+  <tr><td>terrace 4 → 3</td><td>10</td><td>3.9 px</td><td>6.5 px</td><td>97.4 px</td></tr>
+  <tr><td>terrace 5 → 4</td><td>9</td><td>2.6 px</td><td>4.3 px</td><td>11.4 px</td></tr>
+</table>
+<p>With only 4 points the error ranged from 8 px to over 200 px, because small clicking errors get amplified when
+the points are close together. With all the points it stayed within a few pixels.</p>
+</section>
+
+<!-- ============================================================ -->
+<section class="block">
+<h2 id="a3"><span class="num">A.3</span>Warping and rectification</h2>
+<p>I used <b>inverse warping</b>: every output pixel is sent back through <i>H</i><sup>−1</sup> and looks up its
+colour in the input, so there are no holes. The output size comes from warping the 4 corners, and pixels outside the
+input get alpha 0. Two ways to read the colour:</p>
+<ul>
+  <li><b>nearest neighbour</b>: round to the closest pixel</li>
+  <li><b>bilinear</b>: weighted average of the 4 surrounding pixels</li>
+</ul>
+<details open>
+<summary>Code: inverse warping with both interpolations</summary>
+<pre><code>def warped_box(shape, H):
+    # where the 4 corners land = size of the output
+    h, w = shape[:2]
+    corners = apply_H(H, np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], float))
+    x0, y0 = np.floor(corners.min(0)).astype(int)
+    x1, y1 = np.ceil(corners.max(0)).astype(int)
+    return x0, y0, x1, y1
+
+def source_coords(H, box):
+    # inverse warping: every output pixel looks up where it came from, so no holes
+    x0, y0, x1, y1 = box
+    xs, ys = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+    src = apply_H(np.linalg.inv(H), np.column_stack([xs.ravel(), ys.ravel()]))
+    return src[:, 0].reshape(xs.shape), src[:, 1].reshape(xs.shape)
+
+def warpImageNearestNeighbor(im, H, box=None):
+    # (0, 0) is the center of the top-left pixel
+    if box is None:
+        box = warped_box(im.shape, H)
+    sx, sy = source_coords(H, box)
+    h, w = im.shape[:2]
+    cx, cy = np.round(sx).astype(int), np.round(sy).astype(int)
+    alpha = (cx >= 0) & (cx < w) & (cy >= 0) & (cy < h)
+    out = np.zeros(sx.shape + im.shape[2:])
+    out[alpha] = im[cy[alpha], cx[alpha]]
+    return out, alpha.astype(float)
+
+def warpImageBilinear(im, H, box=None):
+    if box is None:
+        box = warped_box(im.shape, H)
+    sx, sy = source_coords(H, box)
+    h, w = im.shape[:2]
+    alpha = (sx >= 0) & (sx <= w - 1) & (sy >= 0) & (sy <= h - 1)
+    x, y = sx[alpha], sy[alpha]
+    # min so x0 + 1 doesn't go past the last column/row
+    x0 = np.minimum(np.floor(x).astype(int), w - 2)
+    y0 = np.minimum(np.floor(y).astype(int), h - 2)
+    fx, fy = x - x0, y - y0
+    if im.ndim == 3:
+        fx, fy = fx[:, None], fy[:, None]
+    top = im[y0, x0] * (1 - fx) + im[y0, x0 + 1] * fx
+    bottom = im[y0 + 1, x0] * (1 - fx) + im[y0 + 1, x0 + 1] * fx
+    out = np.zeros(sx.shape + im.shape[2:])
+    out[alpha] = top * (1 - fy) + bottom * fy
+    return out, alpha.astype(float)</code></pre>
+</details>
+
+<h3>Rectification</h3>
+<p>I mapped the 4 corners of a rectangular object to a rectangle. I measured each object's width:height from the
+photo using the camera's focal length from the EXIF data. The map sign came out as <b>0.746</b> (3:4).</p>
+<div class="grid">
+  <div><img src="images/results/a3_rect_map_input.jpg" alt="Campus map sign photographed at an angle, corners outlined"><div class="cap">campus map sign, corners outlined in red</div></div>
+  <div><img src="images/results/a3_rect_map_bilinear.jpg" alt="Map sign rectified"><div class="cap"><b>rectified</b> (3:4)</div></div>
+</div>
+<p>The text on the sign is now straight and level. The trees and post get warped too, since they aren't on the
+sign's plane. The box front measured <b>0.319</b> (about 1:3).</p>
+<div class="grid">
+  <div><img src="images/results/a3_rect_box_input.jpg" alt="Hand cream box on a shelf, front outlined"><div class="cap">hand cream box, front outlined in red</div></div>
+  <div><img src="images/results/a3_rect_box_bilinear.jpg" alt="Box front rectified"><div class="cap"><b>rectified</b> (1:3)</div></div>
+</div>
+<p>The front of the box now looks head-on, with the lettering level.</p>
+
+<h3 id="a3-interp">Nearest neighbour vs bilinear</h3>
+<figure class="wide">
+  <img src="images/results/a3_rect_map_zoom.jpg" alt="Zoom on the map: nearest neighbour has jagged lines">
+  <figcaption>map sign zoomed in: nearest neighbour (left), bilinear (right)</figcaption>
+</figure>
+<p>Nearest neighbour turns diagonal edges like the blue route into staircases. Bilinear keeps them smooth, but a
+little softer.</p>
+<table>
+  <tr><th></th><th>map sign (721×961 output)</th><th>box (431×1294 output)</th></tr>
+  <tr><td>nearest neighbour</td><td>0.05 s</td><td>0.04 s</td></tr>
+  <tr><td>bilinear</td><td>0.14 s</td><td>0.11 s</td></tr>
+</table>
+<p>Bilinear is about 2.5× slower since it reads 4 pixels instead of 1, but both take well under a second, so I
+used bilinear for the mosaics.</p>
+</section>
+
+<!-- ============================================================ -->
+<section class="block">
+<h2 id="a4"><span class="num">A.4</span>Blending images into a mosaic</h2>
+<p>For each mosaic I kept the middle photo fixed and warped the others into its view:</p>
+<ol>
+  <li>Compute <i>H</i> from every photo to the middle one.</li>
+  <li>Warp every photo's corners to find the size of the final canvas.</li>
+  <li>Warp every photo into that canvas with bilinear interpolation.</li>
+  <li>Blend the overlapping parts.</li>
+</ol>
+<p>For the 5-photo terrace I chained homographies through neighbours, e.g. <i>H</i><sub>1→3</sub> =
+<i>H</i><sub>2→3</sub> <i>H</i><sub>1→2</sub>. Each photo gets a weight that is 1 at its centre and 0 at its
+edges. I compared three ways of combining the photos:</p>
+<ul>
+  <li><b>overwrite</b>: paste each photo on top</li>
+  <li><b>weighted average</b> of all the photos covering a pixel</li>
+  <li><b>2-band blend</b>: low frequencies are averaged, high frequencies come from the photo with the largest
+  weight</li>
+</ul>
+<details>
+<summary>Code: weights and blending</summary>
+<pre><code>def edge_weight(shape):
+    # 1 in the middle of the photo, linearly down to 0 at its edges
+    h, w = shape[:2]
+    wx = 1 - np.abs(np.linspace(-1, 1, w))
+    wy = 1 - np.abs(np.linspace(-1, 1, h))
+    return np.minimum(wy[:, None], wx[None, :])
+
+def blend_average(warped, weights):
+    total = np.maximum(sum(weights), 1e-12)
+    return sum(im * wt[..., None] for im, wt in zip(warped, weights)) / total[..., None]
+
+def blend_two_band(warped, weights, sigma=4):
+    # low freqs -> weighted average so brightness changes fade smoothly
+    # high freqs -> only from the photo with the biggest weight, so edges don't ghost
+    lows, highs = [], []
+    for im, wt in zip(warped, weights):
+        a = (wt > 0).astype(float)
+        # blur only inside the photo, otherwise the black outside leaks in
+        low = blur(im * a[..., None], sigma) / np.maximum(blur(a, sigma), 1e-12)[..., None]
+        low *= a[..., None]
+        lows.append(low)
+        highs.append(im - low)
+    low = blend_average(lows, weights)
+    best = np.argmax(np.stack(weights), axis=0)
+    high = np.zeros_like(low)
+    for i, hi in enumerate(highs):
+        high[best == i] = hi[best == i]
+    return np.clip(low + high, 0, 1)</code></pre>
+</details>
+
+<h3 id="m-terrace">Chuk Wong Terrace (5 photos)</h3>
+<div class="grid c5">
+  <div><img src="images/results/a4_terrace_src1.jpg" alt="Terrace photo 1"><div class="cap">1</div></div>
+  <div><img src="images/results/a4_terrace_src2.jpg" alt="Terrace photo 2"><div class="cap">2</div></div>
+  <div><img src="images/results/a4_terrace_src3.jpg" alt="Terrace photo 3"><div class="cap">3 (reference)</div></div>
+  <div><img src="images/results/a4_terrace_src4.jpg" alt="Terrace photo 4"><div class="cap">4</div></div>
+  <div><img src="images/results/a4_terrace_src5.jpg" alt="Terrace photo 5"><div class="cap">5</div></div>
+</div>
+<figure class="wide">
+  <img src="images/results/a4_terrace_blend.jpg" alt="Five photo panorama of Chuk Wong Terrace">
+  <figcaption><b>2-band blend</b></figcaption>
+</figure>
+<p>The ceiling slats, window frames and lettering line up across all five photos.</p>
+<figure class="wide">
+  <img src="images/results/a4_terrace_seam.jpg" alt="Seam close up: overwrite, average, two band">
+  <figcaption>seam close up: overwrite, weighted average, 2-band blend</figcaption>
+</figure>
+<p>Overwrite leaves a hard brightness step. The weighted average smooths it but makes "CHUK WONG" ghost. The 2-band
+blend fades the brightness and keeps the letters sharp.</p>
+<figure class="wide">
+  <img src="images/results/a4_terrace_weights.jpg" alt="Weight maps of the five photos">
+  <figcaption>weight maps, one colour per photo</figcaption>
+</figure>
+
+<h3 id="m-anthro">Anthropology &amp; Art Practice building (3 photos)</h3>
+<div class="grid c3">
+  <div><img src="images/results/a4_anthro_src1.jpg" alt="Anthropology left"><div class="cap">left</div></div>
+  <div><img src="images/results/a4_anthro_src2.jpg" alt="Anthropology middle"><div class="cap">middle (reference)</div></div>
+  <div><img src="images/results/a4_anthro_src3.jpg" alt="Anthropology right"><div class="cap">right</div></div>
+</div>
+<figure class="wide">
+  <img src="images/results/a4_anthro_blend.jpg" alt="Anthropology building mosaic">
+  <figcaption><b>2-band blend</b></figcaption>
+</figure>
+<p>The overlap here is mostly plain wall, so the three methods look very similar.</p>
+<div class="grid c3">
+  <div><img src="images/results/a4_anthro_overwrite.jpg" alt="Anthropology mosaic, overwrite"><div class="cap">overwrite</div></div>
+  <div><img src="images/results/a4_anthro_average.jpg" alt="Anthropology mosaic, average"><div class="cap">weighted average</div></div>
+  <div><img src="images/results/a4_anthro_blend.jpg" alt="Anthropology mosaic, 2-band"><div class="cap">2-band blend</div></div>
+</div>
+
+<h3 id="m-sunshade">Concrete building with sunshades (2 photos)</h3>
+<div class="grid">
+  <div><img src="images/results/a4_sunshade_src1.jpg" alt="Sunshade building left"><div class="cap">left</div></div>
+  <div><img src="images/results/a4_sunshade_src2.jpg" alt="Sunshade building right"><div class="cap">right (reference)</div></div>
+</div>
+<figure class="wide">
+  <img src="images/results/a4_sunshade_blend.jpg" alt="Sunshade building mosaic">
+  <figcaption><b>2-band blend</b></figcaption>
+</figure>
+<p>The most accurate pair (1.3 px average error): the sunshades, door and lamp line up exactly.</p>
+<figure class="wide">
+  <img src="images/results/a4_sunshade_seam.jpg" alt="Sunshade seam close up">
+  <figcaption>seam close up: with alignment this good, all three methods look the same</figcaption>
+</figure>
+
+</section>
+
+<!-- ============================================================ -->
+<h2 id="learned">What I learned</h2>
+<p>One 3×3 matrix was enough to both straighten a sign and stitch five photos into a panorama. Most of the work
+was in the inputs: well spread out points and photos taken from one spot. Splitting low and high frequencies, like
+in Project 2, was what made the blends clean.</p>
+
+</main>
+</div>
+
+<script src="../assets/blog.js"></script>
+</body>
+</html>
