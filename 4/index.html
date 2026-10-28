@@ -42,34 +42,44 @@
   <h1>Image Warping and Mosaicing</h1>
 </header>
 
-<p>I recovered homographies between photos and used them to rectify flat objects and stitch photos into
-panoramas.</p>
+<p>The goal of this project is to recover homographies between photographs and use them in two ways: to rectify
+planar objects photographed at an angle, and to register, warp and blend overlapping photographs into mosaics. The
+homography solver, the inverse warping with both interpolation methods, and the blending are all implemented in
+NumPy.</p>
 
 <!-- ============================================================ -->
 <section class="block">
 <h2 id="a1"><span class="num">A.1</span>Shooting the photos</h2>
-<p>A homography only works if the scene is flat or the camera only rotates, so for each mosaic I stood in one
-spot and turned my phone between shots, with about half of each photo overlapping the next.</p>
+<p>Two images are related exactly by a homography only if the scene is planar or the camera rotates about a fixed
+centre of projection. For each mosaic I therefore stood in one place and rotated the camera between shots, so that
+all views share approximately the same centre of projection. Consecutive photos overlap by roughly 40–60%, which
+leaves enough common content to establish correspondences.</p>
 <div class="grid c3">
   <div><img src="images/results/a4_anthro_src1.jpg" alt="Anthropology building, left"><div class="cap">Anthropology &amp; Art Practice, 3 photos</div></div>
   <div><img src="images/results/a4_sunshade_src1.jpg" alt="Concrete building with sunshades, left"><div class="cap">concrete building with sunshades, 2 photos</div></div>
   <div><img src="images/results/a4_terrace_src3.jpg" alt="Chuk Wong Terrace, middle photo"><div class="cap">Chuk Wong Terrace, 5 photos</div></div>
 </div>
-<p>For rectification I took a campus map sign and a hand cream box on my shelf, both at an angle.</p>
+<p>For rectification I photographed two planar rectangular objects at an oblique angle: a campus map sign and the
+front face of a hand cream box.</p>
 </section>
 
 <!-- ============================================================ -->
 <section class="block">
 <h2 id="a2"><span class="num">A.2</span>Recovering homographies</h2>
-<p><i>H</i> is a 3×3 matrix mapping (x, y) in one photo to (x', y') in the other. It's only defined up to scale,
-so I fixed the bottom right entry to 1, leaving 8 unknowns:</p>
+<p>A homography <i>H</i> maps a point (x, y) in one image to (x', y') in the other, up to a scale factor
+<i>w</i>. Because <i>H</i> is only defined up to scale, the bottom-right entry is fixed to 1, which leaves eight
+unknowns:</p>
 <p class="math">\[\begin{bmatrix} wx' \\ wy' \\ w \end{bmatrix} = \begin{bmatrix} a & b & c \\ d & e & f \\ g & h & 1 \end{bmatrix} \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}
 \quad\Rightarrow\quad x' = \frac{ax + by + c}{gx + hy + 1}, \quad y' = \frac{dx + ey + f}{gx + hy + 1}\]</p>
-<p>Multiplying out the denominators gives two linear equations per point pair:</p>
+<p>Substituting <i>w</i> = <i>gx</i> + <i>hy</i> + 1 and rearranging yields two equations that are linear in the
+unknowns for every correspondence:</p>
 <p class="math">\[\begin{bmatrix} x & y & 1 & 0 & 0 & 0 & -xx' & -yx' \\ 0 & 0 & 0 & x & y & 1 & -xy' & -yy' \end{bmatrix}
 \begin{bmatrix} a \\ b \\ c \\ d \\ e \\ f \\ g \\ h \end{bmatrix} = \begin{bmatrix} x' \\ y' \end{bmatrix}\]</p>
-<p>4 points give exactly 8 equations, but then any clicking error goes straight into <i>H</i>, so I used 8 to 10
-points and solved with least squares.</p>
+<p><code>computeH(im1_pts, im2_pts)</code> stacks these two rows for every correspondence into a system
+<i>A</i><b>h</b> = <b>b</b>. Four correspondences determine <i>H</i> exactly, but any localisation error in
+those points then propagates directly into the solution. I therefore used 8 to 10 correspondences per pair, which
+makes the system overdetermined, and solved it in the least-squares sense with <code>np.linalg.lstsq</code> before
+appending the fixed 1 and reshaping <b>h</b> into the 3×3 matrix.</p>
 <details open>
 <summary>Code: computeH</summary>
 <pre><code>def system(im1_pts, im2_pts):
@@ -90,25 +100,30 @@ def computeH(im1_pts, im2_pts):
     return np.append(h, 1).reshape(3, 3)</code></pre>
 </details>
 
-<p>I picked correspondences with a small matplotlib tool (<code>pick_points.py</code>). For some pairs I placed
-rough matches and snapped each one to the exact matching pixel by comparing small patches around it.</p>
+<p>Correspondences were selected with a small matplotlib tool (<code>pick_points.py</code>) that displays both
+images side by side and records the clicked coordinates. For some pairs, approximate matches were placed on
+distinctive features (window corners, signage, lettering) and each was then refined to the best-matching pixel by
+normalised cross-correlation of small surrounding patches, keeping only matches with a high correlation score.</p>
 <figure class="wide">
   <img src="images/results/a2_terrace_1_2_points.jpg" alt="Ten corresponding points on terrace photos 1 and 2">
-  <figcaption>terrace 1 → 2. Cyan circles are the left points sent through <i>H</i></figcaption>
+  <figcaption>Correspondences for terrace photos 1 → 2. Cyan circles show the left points mapped through the
+  recovered <i>H</i>; they coincide with the selected points.</figcaption>
 </figure>
-<p>Recovered homography (20 equations, 8 unknowns):</p>
+<p>For this pair the system contains 20 equations in 8 unknowns. The recovered homography is:</p>
 <pre><code>H = [[  1.2776   -0.0731  -216.9663]
      [  0.1954    1.1595  -125.8912]
      [  0.0002    0.0000     1.0000]]</code></pre>
-<p>Average error after fitting: <b>1.9 px</b>.</p>
+<p>The mean reprojection error, i.e. the distance between each selected point and the image of its
+correspondence under <i>H</i>, is <b>1.9 px</b>.</p>
 <figure class="wide">
   <img src="images/results/a2_anthro_left_mid_points.jpg" alt="Hand clicked points on the Anthropology building">
-  <figcaption>Anthropology left → middle: 8 points, 3.1 px average error</figcaption>
+  <figcaption>Correspondences for the Anthropology building, left → middle (8 points, mean error 3.1 px).</figcaption>
 </figure>
 
 <h3 id="a2-points">How many points do you need?</h3>
-<p>I hid one point at a time, fit <i>H</i> on the rest (or only 4 of them), and measured how far off the hidden
-point landed (median):</p>
+<p>To evaluate the benefit of an overdetermined system, I performed a leave-one-out test: each correspondence was
+withheld in turn, <i>H</i> was estimated either from all remaining correspondences or from only four of them, and
+the error at the withheld point was recorded. The table reports the median over all withheld points.</p>
 <table>
   <tr><th>pair</th><th>points</th><th>fit error</th><th>hidden point, all others</th><th>hidden point, only 4</th></tr>
   <tr><td>anthro left → mid</td><td>8</td><td>3.1 px</td><td>9.7 px</td><td>226 px</td></tr>
@@ -119,19 +134,25 @@ point landed (median):</p>
   <tr><td>terrace 4 → 3</td><td>10</td><td>3.9 px</td><td>6.5 px</td><td>97.4 px</td></tr>
   <tr><td>terrace 5 → 4</td><td>9</td><td>2.6 px</td><td>4.3 px</td><td>11.4 px</td></tr>
 </table>
-<p>With only 4 points the error ranged from 8 px to over 200 px, because small clicking errors get amplified when
-the points are close together. With all the points it stayed within a few pixels.</p>
+<p>With only four correspondences, the error at an unseen point ranged from 8 px to over 200 px depending on which
+four were used: when the points are clustered or nearly collinear, small localisation errors are strongly amplified
+away from them. With the full least-squares estimate the error remained within a few pixels for every pair.</p>
 </section>
 
 <!-- ============================================================ -->
 <section class="block">
 <h2 id="a3"><span class="num">A.3</span>Warping and rectification</h2>
-<p>I used <b>inverse warping</b>: every output pixel is sent back through <i>H</i><sup>−1</sup> and looks up its
-colour in the input, so there are no holes. The output size comes from warping the 4 corners, and pixels outside the
-input get alpha 0. Two ways to read the colour:</p>
+<p>Both warping functions use <b>inverse warping</b>. The four corners of the input are first projected through
+<i>H</i> to determine the bounding box of the output. Then, for every output pixel (x', y'), the source location
+(x, y) = <i>H</i><sup>−1</sup>(x', y') is computed and the input is sampled there. Unlike forward warping, this
+guarantees that every output pixel receives a value, so no holes appear. Output pixels whose source falls outside
+the input are assigned an alpha of 0, which keeps missing pixels distinct from genuinely dark ones. Since the source
+location is generally not an integer pixel position, two interpolation methods are implemented:</p>
 <ul>
-  <li><b>nearest neighbour</b>: round to the closest pixel</li>
-  <li><b>bilinear</b>: weighted average of the 4 surrounding pixels</li>
+  <li><b>Nearest neighbour</b> (<code>warpImageNearestNeighbor</code>) rounds (x, y) to the closest pixel and
+  copies its colour.</li>
+  <li><b>Bilinear</b> (<code>warpImageBilinear</code>) takes the four surrounding pixels and, with
+  dx = x − ⌊x⌋ and dy = y − ⌊y⌋, combines them with weights (1−dx)(1−dy), dx(1−dy), (1−dx)dy and dx·dy.</li>
 </ul>
 <details open>
 <summary>Code: inverse warping with both interpolations</summary>
@@ -183,54 +204,66 @@ def warpImageBilinear(im, H, box=None):
 </details>
 
 <h3>Rectification</h3>
-<p>I mapped the 4 corners of a rectangular object to a rectangle. I measured each object's width:height from the
-photo using the camera's focal length from the EXIF data. The map sign came out as <b>0.746</b> (3:4).</p>
+<p>For rectification, I selected the four corners of a rectangular object (top-left, top-right, bottom-right,
+bottom-left) and mapped them to an axis-aligned rectangle, computing <i>H</i> with <code>computeH</code> and warping
+the photo accordingly. The target aspect ratio was estimated from the photo itself: using the focal length stored in
+the image metadata, the two sides of the rectangle can be recovered in 3D from <i>H</i>, and their length ratio gives
+the width-to-height ratio. For the map sign this gives <b>0.746</b>, consistent with a 3:4 sign.</p>
 <div class="grid">
   <div><img src="images/results/a3_rect_map_input.jpg" alt="Campus map sign photographed at an angle, corners outlined"><div class="cap">campus map sign, corners outlined in red</div></div>
   <div><img src="images/results/a3_rect_map_bilinear.jpg" alt="Map sign rectified"><div class="cap"><b>rectified</b> (3:4)</div></div>
 </div>
-<p>The text on the sign is now straight and level. The trees and post get warped too, since they aren't on the
-sign's plane. The box front measured <b>0.319</b> (about 1:3).</p>
+<p>After rectification the lines of text on the sign are straight and level and the map reads as if it were
+photographed head-on. The surrounding trees and the post are distorted, as expected, because they do not lie in the
+plane of the sign. The same procedure applied to the box front gives a ratio of <b>0.319</b>, approximately 1:3.</p>
 <div class="grid">
   <div><img src="images/results/a3_rect_box_input.jpg" alt="Hand cream box on a shelf, front outlined"><div class="cap">hand cream box, front outlined in red</div></div>
   <div><img src="images/results/a3_rect_box_bilinear.jpg" alt="Box front rectified"><div class="cap"><b>rectified</b> (1:3)</div></div>
 </div>
-<p>The front of the box now looks head-on, with the lettering level.</p>
+<p>The rectified front face appears fronto-parallel, with the lettering centred and level. The side of the box
+and the shelf are distorted for the same reason as above.</p>
 
 <h3 id="a3-interp">Nearest neighbour vs bilinear</h3>
 <figure class="wide">
   <img src="images/results/a3_rect_map_zoom.jpg" alt="Zoom on the map: nearest neighbour has jagged lines">
   <figcaption>map sign zoomed in: nearest neighbour (left), bilinear (right)</figcaption>
 </figure>
-<p>Nearest neighbour turns diagonal edges like the blue route into staircases. Bilinear keeps them smooth, but a
-little softer.</p>
+<p>Nearest neighbour performs a single lookup per pixel and no arithmetic on colour values, but it produces blocky,
+staircase-like artefacts along diagonal edges, which is clearly visible on the blue route line where the warp
+enlarges the image. Bilinear interpolation reads four pixels and computes a weighted sum for every output pixel;
+this costs more, but edges and diagonal lines remain smooth, at the price of slight softening.</p>
 <table>
   <tr><th></th><th>map sign (721×961 output)</th><th>box (431×1294 output)</th></tr>
   <tr><td>nearest neighbour</td><td>0.05 s</td><td>0.04 s</td></tr>
   <tr><td>bilinear</td><td>0.14 s</td><td>0.11 s</td></tr>
 </table>
-<p>Bilinear is about 2.5× slower since it reads 4 pixels instead of 1, but both take well under a second, so I
-used bilinear for the mosaics.</p>
+<p>In my implementation bilinear interpolation is approximately 2.5× slower. Since both methods are vectorised and
+complete in well under a second, I used bilinear interpolation for all mosaics.</p>
 </section>
 
 <!-- ============================================================ -->
 <section class="block">
 <h2 id="a4"><span class="num">A.4</span>Blending images into a mosaic</h2>
-<p>For each mosaic I kept the middle photo fixed and warped the others into its view:</p>
+<p>For each mosaic, one photograph (the middle one) is kept fixed as the reference and all others are warped into
+its image plane. The procedure is as follows:</p>
 <ol>
-  <li>Compute <i>H</i> from every photo to the middle one.</li>
-  <li>Warp every photo's corners to find the size of the final canvas.</li>
-  <li>Warp every photo into that canvas with bilinear interpolation.</li>
-  <li>Blend the overlapping parts.</li>
+  <li>Estimate the homography from every photo to the reference.</li>
+  <li>Project the corners of every photo through its homography; their joint bounding box defines the size of the
+  output canvas.</li>
+  <li>Inverse-warp every photo onto this common canvas with bilinear interpolation.</li>
+  <li>Blend the warped photos in their overlapping regions.</li>
 </ol>
-<p>For the 5-photo terrace I chained homographies through neighbours, e.g. <i>H</i><sub>1→3</sub> =
-<i>H</i><sub>2→3</sub> <i>H</i><sub>1→2</sub>. Each photo gets a weight that is 1 at its centre and 0 at its
-edges. I compared three ways of combining the photos:</p>
+<p>In the five-photo terrace sequence the outermost photos barely overlap the reference, so correspondences were
+established only between neighbouring photos and the homographies were composed, e.g. <i>H</i><sub>1→3</sub> =
+<i>H</i><sub>2→3</sub> <i>H</i><sub>1→2</sub>. Every photo is warped together with a weight map that equals 1 at
+its centre and decreases linearly to 0 at its borders. I compared three ways of combining the warped photos:</p>
 <ul>
-  <li><b>overwrite</b>: paste each photo on top</li>
-  <li><b>weighted average</b> of all the photos covering a pixel</li>
-  <li><b>2-band blend</b>: low frequencies are averaged, high frequencies come from the photo with the largest
-  weight</li>
+  <li><b>Overwrite</b>: each photo is pasted over the previous ones.</li>
+  <li><b>Weighted average</b>: each output pixel is the average of all photos covering it, weighted by their
+  weight maps.</li>
+  <li><b>2-band blend</b>: a two-level Laplacian pyramid. The low-frequency band (colour and brightness) is combined
+  by weighted averaging, while the high-frequency band (edges and texture) is taken only from the photo with the
+  largest weight at each pixel.</li>
 </ul>
 <details>
 <summary>Code: weights and blending</summary>
@@ -276,16 +309,23 @@ def blend_two_band(warped, weights, sigma=4):
   <img src="images/results/a4_terrace_blend.jpg" alt="Five photo panorama of Chuk Wong Terrace">
   <figcaption><b>2-band blend</b></figcaption>
 </figure>
-<p>The ceiling slats, window frames and lettering line up across all five photos.</p>
+<p>The ceiling slats, window frames and lettering are continuous across all five photos, even though the outer
+photos are registered to the reference only through the chained homographies. The characteristic bow-tie shape
+results from projecting all views onto the plane of the central photo: the further a view is rotated from it, the
+more strongly it is stretched.</p>
 <figure class="wide">
   <img src="images/results/a4_terrace_seam.jpg" alt="Seam close up: overwrite, average, two band">
-  <figcaption>seam close up: overwrite, weighted average, 2-band blend</figcaption>
+  <figcaption>Close-up of a seam: overwrite (left), weighted average (middle), 2-band blend (right).</figcaption>
 </figure>
-<p>Overwrite leaves a hard brightness step. The weighted average smooths it but makes "CHUK WONG" ghost. The 2-band
-blend fades the brightness and keeps the letters sharp.</p>
+<p>This seam illustrates the differences between the three methods. Because the exposure changed between shots,
+overwriting produces an abrupt brightness step at the border of a photo. Weighted averaging removes the step, but the
+lettering and the windows behind the glass appear doubled (ghosting), since the alignment is not exact to the pixel
+and the reflections in the glass shift between views. The 2-band blend combines the advantages of both: brightness
+transitions smoothly as in the weighted average, while the lettering stays sharp because its high-frequency content
+comes from a single photo.</p>
 <figure class="wide">
   <img src="images/results/a4_terrace_weights.jpg" alt="Weight maps of the five photos">
-  <figcaption>weight maps, one colour per photo</figcaption>
+  <figcaption>Warped weight maps, one colour channel per photo; each is brightest at the centre of its photo.</figcaption>
 </figure>
 
 <h3 id="m-anthro">Anthropology &amp; Art Practice building (3 photos)</h3>
@@ -298,7 +338,8 @@ blend fades the brightness and keeps the letters sharp.</p>
   <img src="images/results/a4_anthro_blend.jpg" alt="Anthropology building mosaic">
   <figcaption><b>2-band blend</b></figcaption>
 </figure>
-<p>The overlap here is mostly plain wall, so the three methods look very similar.</p>
+<p>The roof lines, windows and entrance are continuous across both seams. Since the overlapping regions consist
+mostly of plain wall, the three blending methods produce very similar results for this scene.</p>
 <div class="grid c3">
   <div><img src="images/results/a4_anthro_overwrite.jpg" alt="Anthropology mosaic, overwrite"><div class="cap">overwrite</div></div>
   <div><img src="images/results/a4_anthro_average.jpg" alt="Anthropology mosaic, average"><div class="cap">weighted average</div></div>
@@ -314,19 +355,23 @@ blend fades the brightness and keeps the letters sharp.</p>
   <img src="images/results/a4_sunshade_blend.jpg" alt="Sunshade building mosaic">
   <figcaption><b>2-band blend</b></figcaption>
 </figure>
-<p>The most accurate pair (1.3 px average error): the sunshades, door and lamp line up exactly.</p>
+<p>This pair has the most accurate homography (mean reprojection error 1.3 px), and the rows of sunshades, the door
+and the lamp align precisely across the seam.</p>
 <figure class="wide">
   <img src="images/results/a4_sunshade_seam.jpg" alt="Sunshade seam close up">
-  <figcaption>seam close up: with alignment this good, all three methods look the same</figcaption>
+  <figcaption>Close-up of the seam: overwrite, weighted average, 2-band blend. With alignment this accurate and
+  similar exposure, the three methods are nearly indistinguishable.</figcaption>
 </figure>
 
 </section>
 
 <!-- ============================================================ -->
 <h2 id="learned">What I learned</h2>
-<p>One 3×3 matrix was enough to both straighten a sign and stitch five photos into a panorama. Most of the work
-was in the inputs: well spread out points and photos taken from one spot. Splitting low and high frequencies, like
-in Project 2, was what made the blends clean.</p>
+<p>A single 3×3 homography, estimated by least squares, is sufficient both to rectify planar objects and to
+register a sequence of rotated views into a panorama. The quality of the result depends largely on the inputs:
+well-distributed correspondences make the estimate robust, and the photographs must share a common centre of
+projection for one homography to describe them. Finally, separating low and high frequencies, as in Project 2,
+proved essential for blending: it hides exposure differences without introducing ghosting.</p>
 
 </main>
 </div>
